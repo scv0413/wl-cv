@@ -53,4 +53,4 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 uv run --env-file .env python -m wlcv.training.train
 ```
 
-기본값은 20 epoch, 입력 640, batch 4, AdamW, 초기 학습률 0.001, seed 42입니다. 결과 폴더에는 지표(`results.csv`), 가중치(`weights/best.pt`), 실제 학습 인물(`train_people.csv`)이 저장됩니다. 실험 기록과 공유 전 확인 순서는 [SKILLS.md](SKILLS.md)에 있습니다.
+첫 학습은 기존 사람별 분할과 YOLO26n 사전학습 가중치를 사용합니다. 학습 하이퍼파라미터는 설치된 Ultralytics의 기본값을 따릅니다. 실제 설정은 실행 폴더의 `args.yaml`에서, 자동 선택된 옵티마이저와 초기 학습률은 학습 시작 로그에서 확인하세요. 결과 폴더에는 지표(`results.csv`), 가중치(`weights/best.pt`), 실제 학습 인물(`train_people.csv`)이 저장됩니다. 실험 기록과 공유 전 확인 순서는 [SKILLS.md](SKILLS.md)에 있습니다.
