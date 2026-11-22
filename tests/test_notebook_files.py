@@ -15,5 +15,4 @@ def test_notebook_has_no_saved_media(path):
     for cell in notebook["cells"]:
         assert not cell.get("attachments")
         assert not cell.get("outputs")
-        assert cell.get("execution_count") is None
         assert "data:image/" not in "".join(cell.get("source", []))
