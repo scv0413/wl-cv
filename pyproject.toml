@@ -22,7 +22,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["jupyterlab", "pytest"]
+dev = [
+    "fiftyone==1.22.1",
+    "jupyterlab",
+    "pytest",
+]
 
 [tool.setuptools.packages.find]
 include = ["wlcv*"]

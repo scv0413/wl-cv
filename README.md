@@ -27,8 +27,14 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | --- | --- |
 | 프레임에서 원판 박스를 그리고 저장본 다시 열기 | [원판 라벨링](notebooks/annotation/01_plate_boxes.ipynb) |
 | 동작 이벤트의 프레임 번호 기록 | [동작 시점 판독](notebooks/annotation/02_phase_events.ipynb) |
-| 한 프레임의 정답과 사전학습 예측 비교, 학습, 지표와 예측 다시 보기 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
+| 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
+
+### FiftyOne으로 원판 검수하기
+
+위 YOLO26n 실험 노트북을 순서대로 실행하세요. 처음에는 `run_training = False`로 두고 프레임을 확인합니다. 마지막 셀에서 `open_review = True`로 바꾸면 로컬 FiftyOne에서 검증셋의 정답 박스를 볼 수 있습니다. FiftyOne은 `uv sync --locked`로 설치되는 개발 의존성에 포함되어 있습니다.
+
+학습 후에는 확인할 실행 폴더의 `weights/best.pt`를 불러온 뒤 검수 셀을 다시 실행하세요. `ground_truth`와 `predictions`를 함께 켜고, `eval_fp`와 `eval_fn`으로 오탐·미탐 프레임을 찾습니다. 화면의 수치는 신뢰도 0.25, IoU 0.5에서 센 박스 개수입니다. 커널을 다시 시작하면 로컬 파일에서 검수 화면을 다시 만들 수 있습니다.
 
 ## 코드와 데이터 위치
 
