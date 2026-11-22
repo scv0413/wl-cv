@@ -5,7 +5,7 @@ from tqdm.auto import tqdm
 from ultralytics import YOLO
 
 from wlcv.config import ANNOTATIONS, ROOT, SPLIT, VIDEOS
-from wlcv.data.dataset import label_frame, read_boxes
+from wlcv.data.plate_labels import label_frame, read_boxes
 from wlcv.data.frames import frames_rgb
 from wlcv.evaluation.plots import predict_rgb
 

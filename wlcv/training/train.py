@@ -1,4 +1,4 @@
-"""python -m wlcv.training.train"""
+"""YOLO26n 원판 탐지 베이스라인 학습."""
 
 import argparse
 from pathlib import Path
@@ -8,7 +8,8 @@ from tqdm.auto import tqdm
 from ultralytics import YOLO
 
 from wlcv.config import ANNOTATIONS, DATASET, DEVICE, RUNS, SPLIT, VIDEOS, WEIGHTS
-from wlcv.data.dataset import label_frame, prepare_dataset
+from wlcv.data.dataset import prepare_dataset
+from wlcv.data.plate_labels import label_frame
 
 
 def train_baseline(

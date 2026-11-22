@@ -3,7 +3,6 @@
 import csv
 import hashlib
 import json
-import re
 from collections import defaultdict
 from collections.abc import Iterable
 from contextlib import closing
@@ -15,6 +14,7 @@ import yaml
 from tqdm import tqdm
 
 from .frames import frames_rgb
+from .plate_labels import label_frame, read_boxes
 
 
 def read_splits(split_csv: str | Path) -> dict[str, str]:
@@ -37,32 +37,6 @@ def read_splits(split_csv: str | Path) -> dict[str, str]:
             people[person] = role
             videos[video] = subsets[role]
     return videos
-
-
-def label_frame(path: str | Path) -> tuple[str, int]:
-    """예: a01_sn_f_01_f25.txt → ('a01_sn_f_01', 25)."""
-    path = Path(path)
-    match = re.fullmatch(r"(.+)_f(\d+)", path.stem)
-    if not match:
-        raise ValueError(f"라벨 이름은 영상ID_f프레임번호.txt 형식이어야 합니다: {path.name}")
-    return match[1], int(match[2])
-
-
-def read_boxes(path: str | Path) -> list[tuple[float, float, float, float]]:
-    """빈 파일은 배경 프레임이다. 나머지 행은 '0 중심x 중심y 너비 높이' 형식이다."""
-    path = Path(path)
-    boxes = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip():
-            continue
-        fields = line.split()
-        if len(fields) != 5 or fields[0] != "0":
-            raise ValueError(f"{path} {number}행: 클래스 0과 좌표 4개가 필요합니다.")
-        x, y, width, height = map(float, fields[1:])
-        if not (0 <= x <= 1 and 0 <= y <= 1 and 0 < width <= 1 and 0 < height <= 1):
-            raise ValueError(f"{path} {number}행: 정규화된 상자 좌표를 확인하세요.")
-        boxes.append((x, y, width, height))
-    return boxes
 
 
 def _signature(files: Iterable[Path], base: Path | None = None) -> str:

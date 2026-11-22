@@ -7,6 +7,14 @@ import numpy as np
 from wlcv.data.frames import read_rgb
 
 
+def video_picker(video_dir):
+    """라벨링할 원본 MP4를 고르는 목록을 만든다."""
+    videos = sorted(video_dir.glob("*.mp4"))
+    if not videos:
+        raise FileNotFoundError(f"{video_dir}에 MP4 영상을 넣어 주세요.")
+    return widgets.Dropdown(description="영상", options=[(path.name, path) for path in videos])
+
+
 class FrameView:
     def __init__(self, video_path, start_frame=0):
         self.video_path = video_path
@@ -36,7 +44,7 @@ class FrameView:
 
     def show(self, boxes=(), preview=None):
         canvas = self.rgb.copy()
-        height, width = canvas.shape[:2]
+        height = canvas.shape[0]
         for i, (x, y, w, h) in enumerate(boxes, start=1):
             start = self._pixel(x - w / 2, y - h / 2)
             end = self._pixel(x + w / 2, y + h / 2)

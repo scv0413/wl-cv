@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.patches import Rectangle
 
-from wlcv.data.dataset import read_boxes
+from wlcv.data.plate_labels import read_boxes
 
 
 def predict_rgb(model, frame, *, conf=0.25, imgsz=640, device="cpu"):

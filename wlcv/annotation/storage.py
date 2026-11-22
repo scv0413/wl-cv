@@ -7,22 +7,22 @@ from tempfile import NamedTemporaryFile
 
 from filelock import FileLock
 
+from wlcv.data.plate_labels import check_box, read_boxes
+
 EVENTS = ("ready", "transition", "drive", "catch", "finish")
 
 
 @contextmanager
 def _replacement(path):
     """파일을 모두 쓴 뒤 교체한다. 저장 도중 실패하면 이전 파일을 유지한다."""
-    with NamedTemporaryFile(mode="w", encoding="utf-8", newline="",
-                            dir=path.parent, delete=False) as temp:
-        temp_path = Path(temp.name)
-        try:
+    temp = NamedTemporaryFile(mode="w", encoding="utf-8", newline="", dir=path.parent, delete=False)
+    temp_path = Path(temp.name)
+    try:
+        with temp:
             yield temp
-            temp.close()
-            temp_path.replace(path)
-        finally:
-            temp.close()
-            temp_path.unlink(missing_ok=True)
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def box_path(annotations, video_id, frame):
@@ -35,26 +35,8 @@ def load_boxes(annotations, video_id, frame):
     original = annotations / "plate_boxes" / f"{video_id}_f{frame}.txt"
     for name, path in (("개인 라벨", personal), ("원본 라벨", original)):
         if path.is_file():
-            boxes = []
-            for line in path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                cls, *values = line.split()
-                if cls != "0" or len(values) != 4:
-                    raise ValueError(f"원판 라벨의 형식을 확인하세요. {path.name}")
-                box = tuple(map(float, values))
-                _check_box(box)
-                boxes.append(box)
-            return name, boxes
+            return name, read_boxes(path, inside_frame=True)
     return "미라벨", []
-
-
-def _check_box(box):
-    x, y, w, h = box
-    if not (0 < w <= 1 and 0 < h <= 1 and
-            -1e-6 <= x - w / 2 <= x + w / 2 <= 1 + 1e-6 and
-            -1e-6 <= y - h / 2 <= y + h / 2 <= 1 + 1e-6):
-        raise ValueError("박스의 중심과 크기를 확인하세요.")
 
 
 def save_boxes(annotations, video_id, frame, boxes, *, previous, reviewed_empty=False):
@@ -62,7 +44,7 @@ def save_boxes(annotations, video_id, frame, boxes, *, previous, reviewed_empty=
     if not boxes and not reviewed_empty:
         raise ValueError("원판 없는 프레임은 ‘원판 없음 저장’을 누르세요.")
     for box in boxes:
-        _check_box(box)
+        check_box(box, inside_frame=True)
     path = box_path(annotations, video_id, frame)
     path.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(path.parent / ".write.lock"), timeout=5):

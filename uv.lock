@@ -1963,7 +1963,6 @@ dependencies = [
     { name = "pandas" },
     { name = "pyyaml" },
     { name = "torch" },
-    { name = "torchvision" },
     { name = "tqdm" },
     { name = "ultralytics" },
 ]
@@ -1985,7 +1984,6 @@ requires-dist = [
     { name = "pandas" },
     { name = "pyyaml" },
     { name = "torch" },
-    { name = "torchvision" },
     { name = "tqdm" },
     { name = "ultralytics" },
 ]
