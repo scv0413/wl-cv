@@ -30,6 +30,12 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 
+### 학습 전 영상 입력 확인
+
+YOLO26n 실험 노트북의 첫 코드 셀에서 라벨이 있는 영상의 확장자, 헤더 브랜드, 코덱과 마지막 라벨 프레임을 확인합니다. 파일 형식은 FFmpeg의 `ffprobe`로 읽습니다. Mac에서 `ffprobe`가 없으면 `brew install ffmpeg`로 설치하세요.
+
+노트북에서 `프레임 읽기`가 실패하거나 미검사인 행의 `메모`를 확인한 뒤 학습을 시작하세요.
+
 ### FiftyOne으로 원판 검수하기
 
 위 YOLO26n 실험 노트북을 순서대로 실행하세요. 처음에는 `run_training = False`로 두고 프레임을 확인합니다. 마지막 셀에서 `open_review = True`로 바꾸면 로컬 FiftyOne에서 검증셋의 정답 박스를 볼 수 있습니다. FiftyOne은 `uv sync --locked`로 설치되는 개발 의존성에 포함되어 있습니다.
