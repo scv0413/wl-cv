@@ -31,6 +31,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 | 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |
 | 원판 가림 추가 학습 예시와 동일 검증셋 비교 | [원판 가림 증강 실험](notebooks/experiments/04_plate_occlusion.ipynb) |
+| 회색과 학습 배경 질감 가림을 비교하고 새 패턴에서 검증 | [가림 질감 비교](notebooks/experiments/05_plate_texture_occlusion.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 

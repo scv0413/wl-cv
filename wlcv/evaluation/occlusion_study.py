@@ -12,7 +12,16 @@ from wlcv.data.plate_labels import label_frame, read_boxes
 from wlcv.evaluation.occlusion import plot_occlusion_comparison
 
 
-def validation_occlusion_scores(model, dataset_dir, *, confidence=0.10):
+def held_out_fills(width, height):
+    """학습에서 사용하지 않는 줄무늬와 격자 패치를 만든다."""
+    y, x = np.indices((height, width))
+    stripe = (x // max(1, width // 8)) % 2
+    checker = (stripe + y // max(1, height // 8)) % 2
+    return {"Held-out stripes": (74 + 80 * stripe).astype(np.uint8)[..., None],
+            "Held-out checker": (74 + 80 * checker).astype(np.uint8)[..., None]}
+
+
+def validation_occlusion_scores(model, dataset_dir, *, confidence=0.10, held_out=False):
     """정답 박스 중앙 50%를 가린 고정 조건과 원본에서 매칭 수를 비교한다."""
     images = sorted((dataset_dir / "images" / "val").glob("*.jpg"))
     if not images:
@@ -27,8 +36,10 @@ def validation_occlusion_scores(model, dataset_dir, *, confidence=0.10):
         cx, cy, box_width, box_height = target
         mask = (round(box_width * width * math.sqrt(0.5)),
                 round(box_height * height * math.sqrt(0.5)))
+        fills = held_out_fills(*mask) if held_out else {}
+        regions = {name: (cx, cy) for name in ("Plate 50%", *fills)}
         figure, scores = plot_occlusion_comparison(
-            model, frame, target, {"Plate 50%": (cx, cy)}, mask,
+            model, frame, target, regions, mask, fills=fills,
         )
         plt.close(figure)
         scores["video_id"] = video
