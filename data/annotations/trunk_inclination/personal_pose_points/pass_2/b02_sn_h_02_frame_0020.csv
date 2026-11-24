@@ -1,0 +1,3 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+b02_sn_h_02,b02,validation,20,right,어깨,located,,363,671
+b02_sn_h_02,b02,validation,20,right,골반,estimated,hip_socket,206,889
