@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from tqdm.auto import tqdm
 from ultralytics import YOLO
 
@@ -14,7 +15,7 @@ from wlcv.data.plate_labels import label_frame
 
 def train_baseline(
     data_yaml: Path, *, device=DEVICE, name="plate_baseline", weights=WEIGHTS, split_csv=SPLIT,
-    trainer=None,
+    trainer=None, settings=None,
 ) -> Path:
     """사전학습 YOLO26n을 학습하고 이번 실행의 결과 폴더를 반환한다."""
     # 빈 배경 라벨도 학습에 사용된다. 이번 실행에 들어간 영상과 사람을 보존한다.
@@ -32,11 +33,30 @@ def train_baseline(
 
         model.add_callback("on_train_start", start_progress)
         model.add_callback("on_train_epoch_end", lambda trainer: progress.update())
-        trainer_option = {"trainer": trainer} if trainer is not None else {}
+        options = dict(settings or {})
+        if trainer is not None:
+            options["trainer"] = trainer
         model.train(
-            data=str(data_yaml), device=device, project=str(RUNS), name=name, **trainer_option,
+            data=str(data_yaml), device=device, project=str(RUNS), name=name, **options,
         )
     return Path(model.trainer.save_dir)
+
+
+def train_ablation(baseline_dir: Path, parameter: str) -> Path:
+    """같은 시작 가중치·데이터·설정에서 지정한 증강 하나의 강도만 0으로 바꾼다."""
+    if parameter not in ("scale", "hsv_v"):
+        raise ValueError("비교할 증강은 scale 또는 hsv_v입니다.")
+    settings = yaml.safe_load((baseline_dir / "args.yaml").read_text())
+    weights = Path(settings.pop("model"))
+    data = Path(settings.pop("data"))
+    device = settings.pop("device")
+    for key in ("name", "project", "save_dir"):
+        settings.pop(key, None)
+    settings[parameter] = 0.0
+    run = train_baseline(data, weights=weights, device=device, name=f"plate_{parameter}_off",
+                         settings=settings)
+    (run / "weights/best.pt").resolve(strict=True)
+    return run
 
 
 def main():
