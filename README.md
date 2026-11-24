@@ -14,6 +14,15 @@ uv run --env-file .env jupyter lab
 
 `.env`에서 원본 영상(`WL_VIDEO_DIR`), 시작 가중치(`WL_WEIGHTS`), 추출 데이터(`WL_DATASET_DIR`), 학습 결과(`WL_RUNS_DIR`)를 지정합니다. 상대 경로는 프로젝트 루트 기준입니다. 학습 장치 `WL_TRAIN_DEVICE`는 Mac에서 `mps`, CUDA 첫 GPU에서 `0`, CPU에서 `cpu`입니다. 환경을 변경하면 JupyterLab을 다시 시작합니다.
 
+VS Code에서 사진은 보이는데 클릭해도 점이 생기지 않고 Jupyter 출력에 `ipyevents` 스크립트를 찾을 수 없다고 표시되면, 프로젝트 루트에서 가상환경에 들어 있는 스크립트를 복사합니다.
+
+```sh
+mkdir -p .venv/share/jupyter/nbextensions/ipyevents
+cp -R .venv/lib/python3.12/site-packages/ipyevents/nbextension/static/. .venv/share/jupyter/nbextensions/ipyevents/
+```
+
+노트북에서 **커널 다시 시작** 후 **모든 셀 실행**을 누르면 새 판독 화면을 사용할 수 있습니다.
+
 새 컴퓨터에서는 원본 MP4를 `data/raw/videos/`에 두고 YOLO26n 사전학습 가중치를 준비합니다. 예시 환경 파일의 가중치 경로를 사용할 때의 명령입니다.
 
 ```sh
@@ -31,6 +40,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 같은 프레임을 이전 점 없이 다시 판독하고 두 회차의 차이 확인 | [관절 2차 판독](notebooks/annotation/04_pose_repeatability.ipynb) |
 | b04 9·21번과 a01 5번의 가까운 골반을 두 차례 직접 찍기 | [학습 영상 골반 수동 검수](notebooks/annotation/05_train_hip_review.ipynb) |
 | 학습 후보 8장의 수행자 전신 박스와 가까운 네 관절을 표시 | [학습용 수행자·관절 판독](notebooks/annotation/06_train_pose_candidates.ipynb) |
+| a08 무릎 통과·drive에서 오른쪽 무릎과 발목을 나란히 판독 | [오른쪽 무릎·발목 판독](notebooks/annotation/07_a08_right_knee_ankle.ipynb) |
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 | 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |
