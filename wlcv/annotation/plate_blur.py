@@ -87,7 +87,7 @@ def frame_form(key, original_hub, previous, on_save):
     photo = widgets.Image(format="png", layout=widgets.Layout(
         width=f"{min(width, 500)}px", max_width="100%", height="auto", align_self="flex-start"))
     zoom = widgets.Checkbox(description="원본 크기로 보기")
-    clarity = widgets.Dropdown(options=CLARITY, value=None, description="원판 선명도")
+    clarity = widgets.Dropdown(options=CLARITY, value=None, description="테두리 선명도")
     occlusion = widgets.Dropdown(options=OCCLUSION, value=None, description="원판 가림")
     options = [("직접 찍기", "clicked"), ("판독 불가", "unreadable")]
     if original_hub is not None:
@@ -122,7 +122,7 @@ def frame_form(key, original_hub, previous, on_save):
 
     def submit(_):
         if clarity.value is None or occlusion.value is None:
-            notice.value = "원판 선명도와 가림 여부를 각각 선택하세요."
+            notice.value = "테두리 선명도와 가림 여부를 각각 선택하세요."
             return
         xy = point if hub.value == "clicked" else original_hub
         if hub.value == "unreadable":
