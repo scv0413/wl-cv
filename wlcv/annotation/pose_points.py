@@ -52,7 +52,7 @@ def _save_point(path, row, previous):
 
 def pose_point_editor(video_path, frame_index, person_id, side, *, split, annotations=ANNOTATIONS,
                       pass_number=1, joints=JOINTS, trunk_review=False, frame_label=None, performer_box=None,
-                      direct_only=False):
+                      direct_only=False, crop=None):
     """한 원본 프레임을 열고 사람이 선택한 관절 한 개씩 자동 저장한다."""
     if side not in ("left", "right"):
         raise ValueError(f"{video_path.stem}: 메타데이터에서 카메라에 가까운 쪽을 확인하세요.")
@@ -62,6 +62,10 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
         raise ValueError("판독할 관절을 확인하세요.")
     rgb = read_rgb(video_path, frame_index)
     height, width = rgb.shape[:2]
+    # 화면에 일부분만 펼쳐도 클릭 좌표와 CSV는 원본 기준이다.
+    x0, y0, x1, y1 = crop or (0, 0, width, height)
+    if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
+        raise ValueError("판독 영역이 원본 프레임 밖에 있습니다.")
     path = pose_point_path(annotations, video_path.stem, frame_index, pass_number=pass_number, fold=fold)
     frame_info = dict(video_id=video_path.stem, frame_index=str(frame_index),
                       person_id=person_id, split=split, side=side)
@@ -74,6 +78,8 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     joint = widgets.ToggleButtons(options=options, description="표시 항목" if performer_box else
                                   ("기준점" if fold or hip_fold else "관절"))
     zoom = widgets.Checkbox(value=False, description="원본 크기로 확대")
+    if crop is not None:
+        zoom.description = "세 배로 확대"
     photo = widgets.Image(format="jpeg", layout=widgets.Layout(
         max_width="none", height="auto", display="block"))
     viewport = widgets.Box([photo], layout=widgets.Layout(
@@ -142,7 +148,7 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
                     label = f"옷 가림 추정 ({x}, {y})"
             labels.append(f"{number} {name} {label}")
         summary.value = " · ".join(labels)
-        ok, encoded = cv2.imencode(".jpg", canvas, [cv2.IMWRITE_JPEG_QUALITY, 94])
+        ok, encoded = cv2.imencode(".jpg", canvas[y0:y1, x0:x1], [cv2.IMWRITE_JPEG_QUALITY, 94])
         if not ok:
             raise ValueError("원본 프레임을 표시할 수 없습니다.")
         photo.value = encoded.tobytes()
@@ -150,7 +156,9 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
 
     def resize(*_):
         scale = 1 if zoom.value else min(1, 720 / width, 540 / height)
-        photo.layout.width = f"{round(width * scale)}px"
+        if crop is not None:
+            scale = 3 if zoom.value else 2
+        photo.layout.width = f"{round((x1 - x0) * scale)}px"
 
     def save(xy=None, reason="", status=None):
         nonlocal points
@@ -190,7 +198,7 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
         rx = event["relativeX"] / event["boundingRectWidth"]
         ry = event["relativeY"] / event["boundingRectHeight"]
         if 0 <= rx < 1 and 0 <= ry < 1:
-            point = (int(rx * width), int(ry * height))
+            point = (x0 + int(rx * (x1-x0)), y0 + int(ry * (y1-y0)))
             if performer_box is not None and joint.value == box_option:
                 try:
                     message.value = performer_box.click(point)
