@@ -1,0 +1,2 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+b04_sn_f_01,b04,train,9,left,고관절 앞쪽 접힘점,located,,630,1410
