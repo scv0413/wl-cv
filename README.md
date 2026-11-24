@@ -72,6 +72,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | b04 두 시점에서 눈에 보이는 고관절 접힘점·소켓 추정점·YOLO 골반을 비교 | [고관절 접힘점과 체간 기울기](notebooks/experiments/27_hip_fold_comparison.ipynb) |
 | b04 9·21번의 왼쪽 견봉을 찍고 소켓 중점과 연결해 YOLO 체간 변화와 비교 | [왼쪽 견봉과 체간 기울기](notebooks/experiments/28_b04_acromion_trunk.ipynb) |
 | 세 수행자 박스·무릎·발목을 YOLO 라벨로 변환하고 Mac에서 1 epoch 학습 | [자세 추정 시험 학습](notebooks/experiments/29_pose_smoke.ipynb) |
+| 자세 학습 5장·검증 5장으로 첫 파인튜닝, 수행자 미탐과 다리 관절 오차 전후 비교 (a05 별도) | [무릎·발목 첫 파인튜닝](notebooks/experiments/30_pose_first_finetune.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
