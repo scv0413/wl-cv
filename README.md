@@ -29,6 +29,11 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 동작 이벤트의 프레임 번호 기록 | [동작 시점 판독](notebooks/annotation/02_phase_events.ipynb) |
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
+| 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |
+
+### 학습 결과를 보고서 그림으로 만들기
+
+완료한 실행의 `results.csv`와 `weights/best.pt`를 사용하는 원판 탐지 보고서 노트북을 실행하세요. 새 그림은 해당 실행의 `report/`에 PNG로 저장됩니다. 기준값을 바꿔 보고 싶으면 노트북 상단의 `thresholds`를 수정하세요. 원판과 랙을 가리는 XAI 셀에서는 마스크 위치와 대상 프레임도 확인할 수 있습니다.
 
 ### 학습 전 영상 입력 확인
 
