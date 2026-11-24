@@ -57,6 +57,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 실제 학습 영상에서 가까운 골반을 짚을 수 있는 장면 수와 두 번의 추정점 차이 | [학습 영상 골반 판독](notebooks/experiments/25_train_hip_visibility.ipynb) |
 | 같은 세 프레임에서 트레이너의 두 골반 추정점과 예비 판독을 비교 | [학습 영상 골반 반복 비교](notebooks/experiments/26_train_hip_repeat.ipynb) |
 | b04 두 시점에서 눈에 보이는 고관절 접힘점·소켓 추정점·YOLO 골반을 비교 | [고관절 접힘점과 체간 기울기](notebooks/experiments/27_hip_fold_comparison.ipynb) |
+| b04 9·21번의 왼쪽 견봉을 찍고 소켓 중점과 연결해 YOLO 체간 변화와 비교 | [왼쪽 견봉과 체간 기울기](notebooks/experiments/28_b04_acromion_trunk.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
