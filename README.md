@@ -41,6 +41,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | b04 9·21번과 a01 5번의 가까운 골반을 두 차례 직접 찍기 | [학습 영상 골반 수동 검수](notebooks/annotation/05_train_hip_review.ipynb) |
 | 학습 후보 8장의 수행자 전신 박스와 가까운 네 관절을 표시 | [학습용 수행자·관절 판독](notebooks/annotation/06_train_pose_candidates.ipynb) |
 | a08 무릎 통과·drive에서 오른쪽 무릎과 발목을 나란히 판독 | [오른쪽 무릎·발목 판독](notebooks/annotation/07_a08_right_knee_ankle.ipynb) |
+| 무릎·발목 직접점이 있는 학습 1장과 검증 2장에 수행자 전신 박스 표시 | [수행자 박스 판독](notebooks/annotation/08_pose_performer_boxes.ipynb) |
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 | 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |

@@ -35,6 +35,14 @@ class PerformerBox:
         y1, y2 = sorted((self.first_corner[1], point[1]))
         if x1 == x2 or y1 == y2:
             return "가로와 세로가 모두 생기도록 반대편 모서리를 다시 누르세요."
+        self.save((x1, y1, x2, y2))
+        return "수행자 박스를 저장했습니다. 관절을 선택하거나 박스를 다시 그릴 수 있습니다."
+
+    def save(self, bounds):
+        """확정한 두 모서리를 기록한다. 다른 창이 먼저 바꾼 박스는 보호한다."""
+        x1, y1, x2, y2 = bounds
+        if not (0 <= x1 < x2 and 0 <= y1 < y2):
+            raise ValueError("왼쪽 위와 오른쪽 아래 모서리를 확인하세요.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with FileLock(str(self.path.parent / ".write.lock"), timeout=5):
             if self.read() != self.saved:
@@ -46,7 +54,6 @@ class PerformerBox:
                 writer.writerow(row)
         self.saved = (x1, y1, x2, y2)
         self.first_corner = None
-        return "수행자 박스를 저장했습니다. 관절을 선택하거나 박스를 다시 그릴 수 있습니다."
 
     def draw(self, canvas):
         if self.saved:
