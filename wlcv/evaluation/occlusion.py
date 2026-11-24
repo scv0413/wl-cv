@@ -9,7 +9,9 @@ from ultralytics.utils.metrics import box_iou
 from .plots import predict_rgb
 
 
-def plot_occlusion_comparison(model, frame, target, regions, mask_size, *, min_confidence=0.001):
+def plot_occlusion_comparison(
+    model, frame, target, regions, mask_size, *, min_confidence=0.001, fills=None,
+):
     """정답과 IoU가 0.5 이상인 후보 중 가장 높은 신뢰도를 고른다."""
     height, width = frame.shape[:2]
     cx, cy, bw, bh = target
@@ -29,7 +31,8 @@ def plot_occlusion_comparison(model, frame, target, regions, mask_size, *, min_c
             y = round(center[1] * height - mask_height / 2)
             if not (0 <= x <= width - mask_width and 0 <= y <= height - mask_height):
                 raise ValueError(f"{name} 마스크가 프레임을 벗어납니다.")
-            image[y:y + mask_height, x:x + mask_width] = 114
+            fill = 114 if fills is None else fills.get(name, 114)
+            image[y:y + mask_height, x:x + mask_width] = fill
         output = predict_rgb(model, image, conf=min_confidence)
         boxes = output.boxes.cpu()
         overlaps = box_iou(ground_truth, boxes.xyxy)[0]
