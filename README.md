@@ -30,6 +30,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 가까운 쪽 관절을 직접 찍거나 가림·불확실로 기록 | [수동 관절 판독](notebooks/annotation/03_pose_points.ipynb) |
 | 같은 프레임을 이전 점 없이 다시 판독하고 두 회차의 차이 확인 | [관절 2차 판독](notebooks/annotation/04_pose_repeatability.ipynb) |
 | b04 9·21번과 a01 5번의 가까운 골반을 두 차례 직접 찍기 | [학습 영상 골반 수동 검수](notebooks/annotation/05_train_hip_review.ipynb) |
+| 학습 후보 8장의 수행자 전신 박스와 가까운 네 관절을 표시 | [학습용 수행자·관절 판독](notebooks/annotation/06_train_pose_candidates.ipynb) |
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 | 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |
