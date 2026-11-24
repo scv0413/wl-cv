@@ -15,7 +15,8 @@ POSE_COLOR = (255, 220, 60)
 def draw_pose(image, result, near_side):
     """수행자 후보가 하나일 때만 가까운 쪽 어깨·골반·무릎·발목을 연결한다."""
     count = len(result.boxes)
-    record = {"person_candidates": count, "pose_side": near_side, "joints_drawn": 0}
+    record = {"person_candidates": count, "pose_side": near_side, "joints_drawn": 0,
+              "shoulder_x_px": None, "shoulder_y_px": None}
     if count != 1:
         return record
 
@@ -25,6 +26,9 @@ def draw_pose(image, result, near_side):
         if point["표시 상태"] != "표시":
             previous = None
             continue
+        if point["관절"] == "어깨":
+            record["shoulder_x_px"] = float(point["x (px)"])
+            record["shoulder_y_px"] = float(point["y (px)"])
         xy = (round(point["x (px)"]), round(point["y (px)"]))
         if previous is not None:
             cv2.line(image, previous, xy, POSE_COLOR, 4, cv2.LINE_AA)
