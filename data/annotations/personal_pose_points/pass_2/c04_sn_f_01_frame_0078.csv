@@ -1,0 +1,5 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+c04_sn_f_01,c04,validation,78,left,어깨,estimated,occluded,596,1311
+c04_sn_f_01,c04,validation,78,left,골반,estimated,hip_socket,734,1540
+c04_sn_f_01,c04,validation,78,left,무릎,located,,578,1529
+c04_sn_f_01,c04,validation,78,left,발목,located,,671,1672
