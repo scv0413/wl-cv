@@ -1,0 +1,3 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+a08_sn_f_01,a08,train,23,right,무릎,estimated,occluded,184,459
+a08_sn_f_01,a08,train,23,right,발목,estimated,occluded,181,523
