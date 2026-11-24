@@ -10,6 +10,12 @@ import numpy as np
 
 def frames_rgb(path: str | Path) -> Iterator[np.ndarray]:
     """영상의 모든 프레임을 차례로 읽는다. 각 배열의 형태는 (높이, 너비, 3)이다."""
+    for _, rgb in timed_frames_rgb(path):
+        yield rgb
+
+
+def timed_frames_rgb(path: str | Path) -> Iterator[tuple[float, np.ndarray]]:
+    """원본 표시 시각(ms)과 회전이 반영된 RGB 배열을 디코딩 순서대로 돌려준다."""
     capture = cv2.VideoCapture(str(path))
     try:
         if not capture.isOpened():
@@ -18,7 +24,8 @@ def frames_rgb(path: str | Path) -> Iterator[np.ndarray]:
             ok, bgr = capture.read()
             if not ok:
                 break
-            yield cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            time_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
+            yield time_ms, cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     finally:
         capture.release()
 
