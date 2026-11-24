@@ -1,0 +1,2 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+c08_sn_f_01,c08,validation,24,left,앞쪽 접힘점,located,,609,1656
