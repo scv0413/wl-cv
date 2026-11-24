@@ -47,6 +47,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 고신뢰 박스의 이력 갱신 여부만 바꾸고 같은 417프레임에서 복구·오연결 확인 | [고신뢰 박스의 궤적 반영](notebooks/experiments/16_high_history_update.ipynb) |
 | 원판 크기와 밝기 증강을 하나씩 끄고 검증 결과 비교 | [scale·hsv_v 통제실험](notebooks/experiments/17_scale_hsv_ablation.ipynb) |
 | 검증 영상에서 어깨·골반·무릎·발목 예측을 원본과 비교 | [YOLO26n-pose 자세 추정 베이스라인](notebooks/experiments/18_pose_baseline.ipynb) |
+| 다른 검증 선수 3명의 무릎 통과에서 가까운 복사뼈의 세로 차이 확인 | [무릎 통과 발목 비교](notebooks/experiments/19_transition_ankles.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
