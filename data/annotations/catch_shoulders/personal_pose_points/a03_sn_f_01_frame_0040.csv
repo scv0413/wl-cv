@@ -1,0 +1,2 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+a03_sn_f_01,a03,validation,40,left,어깨,estimated,occluded,408,746
