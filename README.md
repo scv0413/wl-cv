@@ -52,6 +52,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 이륙·무릎 통과에서 가까운 어깨와 골반을 찍고 체간 기울기 변화와 옷 가림 추정 구분 | [두 시점의 체간 기울기](notebooks/experiments/21_trunk_inclination.ipynb) |
 | 같은 12프레임의 어깨·골반을 무작위 순서로 다시 찍고 두 회차의 체간 변화 비교 | [체간 기울기 반복 판독](notebooks/experiments/22_trunk_repeatability.ipynb) |
 | 12프레임의 YOLO26n-pose 체간 각도와 두 수동 판독의 변화 방향·크기 비교 | [모델과 수동 체간 기울기 비교](notebooks/experiments/23_pose_trunk_model.ipynb) |
+| a05·b02에서 어깨 또는 골반만 바꿨을 때 체간 변화 방향 비교 | [체간 관절 한 점 교체](notebooks/experiments/24_trunk_joint_swap.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
