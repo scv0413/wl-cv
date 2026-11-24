@@ -30,6 +30,31 @@ def manual_xy(point, allowed):
     return np.array([float(point["x_px"]), float(point["y_px"])])
 
 
+def left_pose_joints(model, rgb, frame):
+    """검수한 b04 수행자의 왼쪽 관절을 읽고 신뢰도 기준 미달 좌표를 비운다."""
+    result = predict_rgb(model, rgb).cpu().numpy()
+    if len(result.boxes) != 1:
+        raise ValueError(f"{frame}번의 수행자 후보 수가 달라졌습니다. 원본을 확인하세요.")
+    joints = joint_table(result, 1, min_confidence=0.50)
+    left = joints.loc[joints["방향"] == "left"].set_index("관절").copy()
+    left.loc[left["표시 상태"] != "표시", ["x (px)", "y (px)"]] = np.nan
+    return left
+
+
+def socket_midpoint(folder, frame):
+    """같은 프레임의 두 소켓 추정점을 평균한다. 한 회차가 빠지면 좌표를 비운다."""
+    reads = []
+    for number in (1, 2):
+        path = pose_point_path(folder, VIDEO, frame, pass_number=number)
+        point = load_points(path).get("골반")
+        if point and (point["video_id"], int(point["frame_index"]), point["side"], point["split"]) != (
+            VIDEO, frame, "left", "train"
+        ):
+            raise ValueError(f"{frame}번 {number}차 소켓의 영상·프레임·방향·분할을 확인하세요.")
+        reads.append(manual_xy(point, {"estimated", "located"}))
+    return np.mean(reads, axis=0)
+
+
 def compare(video_path, model, fold_folder, socket_folder):
     folds = fold_reads(fold_folder)
     if not all(folds.values()):
@@ -39,24 +64,11 @@ def compare(video_path, model, fold_folder, socket_folder):
 
     rows = []
     for frame in FRAMES:
-        rgb = read_rgb(video_path, frame)
-        result = predict_rgb(model, rgb).cpu().numpy()
-        # 이 두 장은 원본에서 수행자 한 명씩 확인했다.
-        if len(result.boxes) != 1:
-            raise ValueError(f"{frame}번의 수행자 후보 수가 달라졌습니다. 원본을 확인하세요.")
-        joints = joint_table(result, 1, min_confidence=0.50)
-        left = joints.loc[joints["방향"] == "left"].set_index("관절")
-        coords = left[["x (px)", "y (px)"]].copy()
-        coords.loc[left["표시 상태"] != "표시"] = np.nan
+        left = left_pose_joints(model, read_rgb(video_path, frame), frame)
+        coords = left[["x (px)", "y (px)"]]
         shoulder = coords.loc["어깨"].to_numpy()
         model_hip = coords.loc["골반"].to_numpy()
-
-        socket_reads = []
-        for number in (1, 2):
-            path = pose_point_path(socket_folder, VIDEO, frame, pass_number=number)
-            point = load_points(path).get("골반")
-            socket_reads.append(manual_xy(point, {"estimated", "located"}))
-        socket = np.mean(socket_reads, axis=0)
+        socket = socket_midpoint(socket_folder, frame)
         fold = manual_xy(folds[frame], {"located"})
         for method, endpoint in zip(METHODS, (socket, fold, model_hip)):
             rows.append({"프레임": frame, "기준": method,
