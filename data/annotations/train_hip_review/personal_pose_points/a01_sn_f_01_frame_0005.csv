@@ -1,0 +1,2 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+a01_sn_f_01,a01,train,5,left,골반,estimated,hip_socket,489,792
