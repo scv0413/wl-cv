@@ -55,6 +55,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 12프레임의 YOLO26n-pose 체간 각도와 두 수동 판독의 변화 방향·크기 비교 | [모델과 수동 체간 기울기 비교](notebooks/experiments/23_pose_trunk_model.ipynb) |
 | a05·b02에서 어깨 또는 골반만 바꿨을 때 체간 변화 방향 비교 | [체간 관절 한 점 교체](notebooks/experiments/24_trunk_joint_swap.ipynb) |
 | 실제 학습 영상에서 가까운 골반을 짚을 수 있는 장면 수와 두 번의 추정점 차이 | [학습 영상 골반 판독](notebooks/experiments/25_train_hip_visibility.ipynb) |
+| 같은 세 프레임에서 트레이너의 두 골반 추정점과 예비 판독을 비교 | [학습 영상 골반 반복 비교](notebooks/experiments/26_train_hip_repeat.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
