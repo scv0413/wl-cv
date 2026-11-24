@@ -39,6 +39,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 검증 31장에서 같은 질감으로 중앙·아래쪽 가림 비율을 높이며 두 모델의 신뢰도와 후보 소실 비교 | [가림 비율별 원판 탐지](notebooks/experiments/10_plate_occlusion_dose.ipynb) |
 | 두 프레임의 원판 하단 안쪽·바깥·경계에서 베이스라인 비교 | [원판 하단 경계 가림](notebooks/experiments/11_plate_rim_boundary.ipynb) |
 | 실제 77프레임의 수동 원판 중심과 프레임별·시간 연결 결과 비교 | [원판 중심 궤적](notebooks/experiments/12_plate_center_tracking.ipynb) |
+| 같은 저신뢰 후보를 직전 박스 너비의 0.5배·1.0배 거리에서 연결 | [허용 거리 비교](notebooks/experiments/13_plate_link_distance.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
