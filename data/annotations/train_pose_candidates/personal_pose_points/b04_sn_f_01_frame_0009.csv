@@ -1,0 +1,5 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+b04_sn_f_01,b04,train,9,left,어깨,located,,458,1294
+b04_sn_f_01,b04,train,9,left,골반,estimated,hip_socket,660.5,1425.5
+b04_sn_f_01,b04,train,9,left,무릎,located,,496,1484
+b04_sn_f_01,b04,train,9,left,발목,unreadable,occluded,,
