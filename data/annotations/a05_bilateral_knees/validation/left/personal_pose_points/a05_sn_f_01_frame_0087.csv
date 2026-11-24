@@ -1,0 +1,2 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+a05_sn_f_01,a05,validation,87,left,무릎,located,,239,561
