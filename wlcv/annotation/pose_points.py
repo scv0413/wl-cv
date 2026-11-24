@@ -13,6 +13,7 @@ from .storage import _replacement
 
 JOINTS = ("어깨", "골반", "무릎", "발목")
 ANKLE_FOLD = "앞쪽 접힘점"
+HIP_FOLD = "고관절 앞쪽 접힘점"
 FIELDS = ("video_id", "person_id", "split", "frame_index", "side", "joint",
           "status", "reason", "x_px", "y_px")
 
@@ -45,7 +46,7 @@ def _save_point(path, row, previous):
         with _replacement(path) as output:
             writer = csv.DictWriter(output, fieldnames=FIELDS)
             writer.writeheader()
-            writer.writerows(points[joint] for joint in (*JOINTS, ANKLE_FOLD) if joint in points)
+            writer.writerows(points[joint] for joint in (*JOINTS, ANKLE_FOLD, HIP_FOLD) if joint in points)
         return points
 
 
@@ -55,7 +56,8 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     if side not in ("left", "right"):
         raise ValueError(f"{video_path.stem}: 메타데이터에서 카메라에 가까운 쪽을 확인하세요.")
     fold = tuple(joints) == (ANKLE_FOLD,)
-    if not fold and (not joints or not set(joints).issubset(JOINTS)):
+    hip_fold = tuple(joints) == (HIP_FOLD,)
+    if not (fold or hip_fold) and (not joints or not set(joints).issubset(JOINTS)):
         raise ValueError("판독할 관절을 확인하세요.")
     rgb = read_rgb(video_path, frame_index)
     height, width = rgb.shape[:2]
@@ -66,7 +68,7 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     side_label = "왼쪽" if side == "left" else "오른쪽"
     frame_label = frame_label or f"{video_path.stem} · {frame_index}번"
     title = widgets.Label(f"{pass_number}차 판독 · {frame_label} · 선수의 {side_label}")
-    joint = widgets.ToggleButtons(options=joints, description="기준점" if fold else "관절")
+    joint = widgets.ToggleButtons(options=joints, description="기준점" if fold or hip_fold else "관절")
     zoom = widgets.Checkbox(value=False, description="원본 크기로 확대")
     photo = widgets.Image(format="jpeg", layout=widgets.Layout(
         max_width="none", height="auto", display="block"))
@@ -198,5 +200,8 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     if trunk_review:
         joint.observe(select_visibility, names="value")
         select_visibility()
-    actions = widgets.Box([visibility if trunk_review else quality, hidden, unsure, reload_button], layout=widgets.Layout(flex_flow="row wrap"))
+    buttons = [hidden, unsure, reload_button]
+    if not hip_fold:
+        buttons.insert(0, visibility if trunk_review else quality)
+    actions = widgets.Box(buttons, layout=widgets.Layout(flex_flow="row wrap"))
     return widgets.VBox([title, joint, actions, summary, message, zoom, viewport])
