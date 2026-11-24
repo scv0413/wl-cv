@@ -41,6 +41,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 실제 77프레임의 수동 원판 중심과 프레임별·시간 연결 결과 비교 | [원판 중심 궤적](notebooks/experiments/12_plate_center_tracking.ipynb) |
 | 같은 저신뢰 후보를 직전 박스 너비의 0.5배·1.0배 거리에서 연결 | [허용 거리 비교](notebooks/experiments/13_plate_link_distance.ipynb) |
 | 다른 검증 영상 3편의 171프레임에서 프레임별 탐지와 0.5배 시간 연결 비교 | [다른 검증 영상의 추적 비교](notebooks/experiments/14_additional_plate_tracking.ipynb) |
+| b02·c07 원본 영상 4편 전체에서 저신뢰 원판의 복구와 연속 미탐 확인 | [전체 영상의 저신뢰 연결](notebooks/experiments/15_low_confidence_tracking.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
