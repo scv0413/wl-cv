@@ -35,3 +35,40 @@ def plot_review(events, people, video_files, video_dir, show_points=True):
         fig.suptitle("Near-side hip review   |   original frames", fontsize=16)
     fig.tight_layout()
     return fig
+
+
+def plot_hip_reads(points, video_files, video_dir):
+    """한 열에 한 장면을 놓고 아래에서 같은 위치를 원본 픽셀 기준으로 확대한다."""
+    from matplotlib.lines import Line2D
+
+    groups = points.groupby(["video_id", "frame_index"], sort=False)
+    fig, axes = plt.subplots(2, len(groups), figsize=(4 * len(groups), 7), squeeze=False)
+    colors = {"트레이너": "#ffd746", "예비": "#00e1ff"}
+    markers = {1: "o", 2: "+"}
+    for col, ((video, frame), rows) in enumerate(groups):
+        rgb = read_rgb(video_dir / video_files[video], frame)
+        height, width = rgb.shape[:2]
+        valid = rows.dropna(subset=["x", "y"])
+        for ax in axes[:, col]:
+            ax.imshow(rgb)
+            for point in valid.itertuples():
+                ax.plot(point.x, point.y, marker=markers[point.round_number],
+                        color=colors[point.reader], markerfacecolor="none",
+                        markersize=10, markeredgewidth=1.8)
+            ax.axis("off")
+        ax = axes[0, col]
+        ax.set_xlim(width * 0.16, width * 0.90)
+        ax.set_ylim(height * 0.88, height * 0.40)
+        ax.set_title(f"{video[:3]}   |   frame {frame}")
+        if not valid.empty:
+            x, y = valid[["x", "y"]].mean()
+            axes[1, col].set_xlim(x - 75, x + 75)
+            axes[1, col].set_ylim(y + 75, y - 75)
+    handles = [Line2D([], [], color=color, linewidth=4, label=label)
+               for color, label in [(colors["트레이너"], "Trainer"), (colors["예비"], "Preliminary")]]
+    handles.extend(Line2D([], [], color="black", marker=marker, markerfacecolor="none",
+                          linestyle="none", markersize=9, label=f"Read {number}")
+                   for number, marker in markers.items())
+    fig.legend(handles=handles, loc="upper center", ncol=4)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    return fig

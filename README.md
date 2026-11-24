@@ -29,6 +29,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 동작 이벤트의 프레임 번호 기록 | [동작 시점 판독](notebooks/annotation/02_phase_events.ipynb) |
 | 가까운 쪽 관절을 직접 찍거나 가림·불확실로 기록 | [수동 관절 판독](notebooks/annotation/03_pose_points.ipynb) |
 | 같은 프레임을 이전 점 없이 다시 판독하고 두 회차의 차이 확인 | [관절 2차 판독](notebooks/annotation/04_pose_repeatability.ipynb) |
+| b04 9·21번과 a01 5번의 가까운 골반을 두 차례 직접 찍기 | [학습 영상 골반 수동 검수](notebooks/annotation/05_train_hip_review.ipynb) |
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 | 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |
@@ -54,6 +55,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 12프레임의 YOLO26n-pose 체간 각도와 두 수동 판독의 변화 방향·크기 비교 | [모델과 수동 체간 기울기 비교](notebooks/experiments/23_pose_trunk_model.ipynb) |
 | a05·b02에서 어깨 또는 골반만 바꿨을 때 체간 변화 방향 비교 | [체간 관절 한 점 교체](notebooks/experiments/24_trunk_joint_swap.ipynb) |
 | 실제 학습 영상에서 가까운 골반을 짚을 수 있는 장면 수와 두 번의 추정점 차이 | [학습 영상 골반 판독](notebooks/experiments/25_train_hip_visibility.ipynb) |
+| 같은 세 프레임에서 트레이너의 두 골반 추정점과 예비 판독을 비교 | [학습 영상 골반 반복 비교](notebooks/experiments/26_train_hip_repeat.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
