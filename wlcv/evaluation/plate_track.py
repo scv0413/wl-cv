@@ -41,7 +41,7 @@ def link_low_candidate(candidates, history, frame, *, distance_ratio=0.5, checks
 
 
 def select_centers(frames, candidates, *, distance_ratio=0.5, checks=None,
-                   gate_high_history=False, high_checks=None):
+                   gate_high_history=False, high_checks=None, history_checks=None):
     """정답 좌표·IoU 없이 후보를 선택한다. 두 방법의 고신뢰 선택은 같다."""
     if not np.isfinite(distance_ratio) or distance_ratio <= 0:
         raise ValueError("연결 거리 배율은 양의 유한한 수여야 합니다.")
@@ -66,6 +66,12 @@ def select_centers(frames, candidates, *, distance_ratio=0.5, checks=None,
             source = "high" if high is not None else "missing"
             if last_high is not None and frame - last_high > 2:
                 history = []
+            # 선택 직전의 이력을 기록한다. 직접 검출에서는 이 반경을 적용하지 않는다.
+            if history_checks is not None and history:
+                ex, ey = expected_center(history, frame)
+                last = history[-1][1]
+                history_checks.append(dict(video_id=video, frame_index=frame, expected_x=ex,
+                                           expected_y=ey, radius_px=(last.x2-last.x1)*distance_ratio))
             add_to_history = True
             if high is not None:
                 # 고신뢰 출력과 2프레임 시계는 두 조건에서 동일하다.
