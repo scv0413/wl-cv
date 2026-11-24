@@ -35,3 +35,4 @@ __pycache__/
 *.[bB][mM][pP]
 *.[tT][iI][fF]
 *.[tT][iI][fF][fF]
+/data/annotations/**/.*.lock
