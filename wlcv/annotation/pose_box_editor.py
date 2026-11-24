@@ -1,4 +1,4 @@
-"""기존 무릎·발목 점을 배경에 표시하고 수행자 전신 박스만 편집한다."""
+"""원본 프레임에서 수행자 박스를 편집한다. 필요하면 기존 관절점을 표시한다."""
 
 import cv2
 import ipywidgets as widgets
@@ -28,6 +28,17 @@ def performer_box_editor(video_path, frame, *, source, person, split, side, box)
         cv2.drawMarker(view.rgb, pixel, (0, 0, 0), marker, 14, 4)
         cv2.drawMarker(view.rgb, pixel, (255, 218, 68), marker, 14, 2)
 
+    return _box_widget(view, box, width, height, "머리부터 발끝까지 드래그하세요.")
+
+
+def visible_box_editor(video_path, frame, box):
+    """처음에는 원본만 보여 주고 재개할 때는 이번 판독의 저장본만 불러온다."""
+    view = FrameView(video_path, frame)
+    width, height = view.read()
+    return _box_widget(view, box, width, height, "보이는 수행자의 양 끝을 대각선으로 드래그하세요.")
+
+
+def _box_widget(view, box, width, height, instruction):
     save = widgets.Button(description="박스 저장", button_style="success", disabled=True)
     reload = widgets.Button(description="저장본 다시 열기")
     status = widgets.Label()
@@ -37,7 +48,7 @@ def performer_box_editor(video_path, frame, *, source, person, split, side, box)
     def show_saved():
         if box.saved is None:
             view.show()
-            status.value = "미저장 · 머리부터 발끝까지 드래그하세요."
+            status.value = f"미저장 · {instruction}"
         else:
             x1, y1, x2, y2 = box.saved
             view.show([((x1 + x2) / (2 * width), (y1 + y2) / (2 * height),
