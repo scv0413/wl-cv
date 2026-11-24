@@ -51,7 +51,8 @@ def _save_point(path, row, previous):
 
 
 def pose_point_editor(video_path, frame_index, person_id, side, *, split, annotations=ANNOTATIONS,
-                      pass_number=1, joints=JOINTS, trunk_review=False, frame_label=None, performer_box=None):
+                      pass_number=1, joints=JOINTS, trunk_review=False, frame_label=None, performer_box=None,
+                      direct_only=False):
     """한 원본 프레임을 열고 사람이 선택한 관절 한 개씩 자동 저장한다."""
     if side not in ("left", "right"):
         raise ValueError(f"{video_path.stem}: 메타데이터에서 카메라에 가까운 쪽을 확인하세요.")
@@ -165,7 +166,7 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
             elif name == "골반":
                 status, reason = "estimated", "hip_socket"
             elif status is None:
-                status = "estimated" if old.get("status") == "estimated" else "located"
+                status = "estimated" if not direct_only and old.get("status") == "estimated" else "located"
             if status == "estimated" and not reason:
                 reason = old.get("reason") if old.get("status") == "estimated" else "occluded"
             row = dict(frame_info, joint=name, status=status, reason=reason, x_px=str(x), y_px=str(y))
@@ -230,7 +231,7 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
         joint.observe(change_tool, names="value")
         change_tool()
     buttons = [hidden, unsure, reload_button]
-    if not hip_fold:
+    if not hip_fold and not direct_only:
         buttons.insert(0, visibility if trunk_review else quality)
     actions = widgets.Box(buttons, layout=widgets.Layout(flex_flow="row wrap"))
     return widgets.VBox([title, joint, actions, summary, message, zoom, viewport])
