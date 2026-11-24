@@ -42,6 +42,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 같은 저신뢰 후보를 직전 박스 너비의 0.5배·1.0배 거리에서 연결 | [허용 거리 비교](notebooks/experiments/13_plate_link_distance.ipynb) |
 | 다른 검증 영상 3편의 171프레임에서 프레임별 탐지와 0.5배 시간 연결 비교 | [다른 검증 영상의 추적 비교](notebooks/experiments/14_additional_plate_tracking.ipynb) |
 | b02·c07 원본 영상 4편 전체에서 저신뢰 원판의 복구와 연속 미탐 확인 | [전체 영상의 저신뢰 연결](notebooks/experiments/15_low_confidence_tracking.ipynb) |
+| 고신뢰 박스의 이력 갱신 여부만 바꾸고 같은 417프레임에서 복구·오연결 확인 | [고신뢰 박스의 궤적 반영](notebooks/experiments/16_high_history_update.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
