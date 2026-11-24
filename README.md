@@ -35,6 +35,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 준비부터 받기까지 신뢰도별 연속 미탐과 랙 오탐 확인 | [원판 연속 미탐 평가](notebooks/experiments/06_plate_temporal_misses.ipynb) |
 | 베이스라인·회색·질감 모델이 같은 구간에서 놓친 프레임 비교 | [가림 모델 연속 미탐 비교](notebooks/experiments/07_plate_temporal_model_comparison.ipynb) |
 | 질감 가림 위치별 원판 검출과 빈 바닥 오탐 비교 | [질감 패치 위치 실험](notebooks/experiments/08_plate_patch_position.ipynb) |
+| 아래 윤곽 가림에서 같은 예측을 합성 전 박스와 보이는 부분 박스로 평가 | [가림 후 정답 박스 비교](notebooks/experiments/09_plate_visible_box_evaluation.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
