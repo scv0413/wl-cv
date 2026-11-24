@@ -51,7 +51,7 @@ def _save_point(path, row, previous):
 
 
 def pose_point_editor(video_path, frame_index, person_id, side, *, split, annotations=ANNOTATIONS,
-                      pass_number=1, joints=JOINTS, trunk_review=False, frame_label=None):
+                      pass_number=1, joints=JOINTS, trunk_review=False, frame_label=None, performer_box=None):
     """한 원본 프레임을 열고 사람이 선택한 관절 한 개씩 자동 저장한다."""
     if side not in ("left", "right"):
         raise ValueError(f"{video_path.stem}: 메타데이터에서 카메라에 가까운 쪽을 확인하세요.")
@@ -68,7 +68,10 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     side_label = "왼쪽" if side == "left" else "오른쪽"
     frame_label = frame_label or f"{video_path.stem} · {frame_index}번"
     title = widgets.Label(f"{pass_number}차 판독 · {frame_label} · 선수의 {side_label}")
-    joint = widgets.ToggleButtons(options=joints, description="기준점" if fold or hip_fold else "관절")
+    box_option = "수행자 박스"
+    options = (box_option, *joints) if performer_box is not None else joints
+    joint = widgets.ToggleButtons(options=options, description="표시 항목" if performer_box else
+                                  ("기준점" if fold or hip_fold else "관절"))
     zoom = widgets.Checkbox(value=False, description="원본 크기로 확대")
     photo = widgets.Image(format="jpeg", layout=widgets.Layout(
         max_width="none", height="auto", display="block"))
@@ -87,6 +90,10 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     def select_visibility(*_):
         options = [("직접 확인", "located"), ("옷에 가려 추정", "clothing"),
                    ("그 밖의 가림으로 추정", "occluded")]
+        editing_box = joint.value == box_option
+        visibility.disabled = hidden.disabled = unsure.disabled = editing_box
+        if performer_box is not None:
+            performer_box.first_corner = None
         default = "located"
         if joint.value == "골반":
             options.append(("소켓 위치 추정", "hip_socket"))
@@ -111,6 +118,9 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     def draw():
         canvas = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         labels = []
+        if performer_box is not None:
+            performer_box.draw(canvas)
+            labels.append("박스 저장됨" if performer_box.saved else "박스 미검수")
         for number, name in enumerate(joints, start=1):
             row = points.get(name)
             if row is None:
@@ -118,13 +128,15 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
             elif row["status"] == "unreadable":
                 label = "판독 불가(가림)" if row["reason"] == "occluded" else "판독 불가(불확실)"
             else:
-                x, y = int(row["x_px"]), int(row["y_px"])
+                # 소켓 1·2차 평균은 반 픽셀일 수 있다. 표시할 때만 반올림한다.
+                x, y = (round(float(row[key])) for key in ("x_px", "y_px"))
                 estimated = row["status"] == "estimated"
                 marker = cv2.MARKER_DIAMOND if estimated else cv2.MARKER_CROSS
                 cv2.drawMarker(canvas, (x, y), (0, 225, 255), marker, 15, 2)
                 cv2.putText(canvas, str(number), (x + 7, max(15, y - 7)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 225, 255), 2)
-                label = f"추정 ({x}, {y})" if estimated else f"({x}, {y})"
+                xy_label = f"({row['x_px']}, {row['y_px']})"
+                label = f"추정 {xy_label}" if estimated else f"직접 확인 {xy_label}"
                 if trunk_review and row["reason"] == "clothing":
                     label = f"옷 가림 추정 ({x}, {y})"
             labels.append(f"{number} {name} {label}")
@@ -177,11 +189,21 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
         rx = event["relativeX"] / event["boundingRectWidth"]
         ry = event["relativeY"] / event["boundingRectHeight"]
         if 0 <= rx < 1 and 0 <= ry < 1:
-            save((int(rx * width), int(ry * height)))
+            point = (int(rx * width), int(ry * height))
+            if performer_box is not None and joint.value == box_option:
+                try:
+                    message.value = performer_box.click(point)
+                except (OSError, ValueError) as error:
+                    message.value = str(error)
+                draw()
+            else:
+                save(point)
 
     def reload(*_):
         nonlocal points
         points = load_points(path)
+        if performer_box is not None:
+            performer_box.reload()
         if trunk_review:
             select_visibility()
         draw()
@@ -200,6 +222,13 @@ def pose_point_editor(video_path, frame_index, person_id, side, *, split, annota
     if trunk_review:
         joint.observe(select_visibility, names="value")
         select_visibility()
+    if performer_box is not None:
+        def change_tool(*_):
+            draw()
+            message.value = ("수행자의 전신을 감싸는 두 모서리를 차례로 누르세요."
+                             if joint.value == box_option else "판독 상태를 선택하고 관절을 누르세요.")
+        joint.observe(change_tool, names="value")
+        change_tool()
     buttons = [hidden, unsure, reload_button]
     if not hip_fold:
         buttons.insert(0, visibility if trunk_review else quality)
