@@ -49,6 +49,7 @@ curl --fail --location --output models/yolo26n.pt https://github.com/ultralytics
 | 검증 영상에서 어깨·골반·무릎·발목 예측을 원본과 비교 | [YOLO26n-pose 자세 추정 베이스라인](notebooks/experiments/18_pose_baseline.ipynb) |
 | 다른 검증 선수 3명의 무릎 통과에서 가까운 복사뼈의 세로 차이 확인 | [무릎 통과 발목 비교](notebooks/experiments/19_transition_ankles.ipynb) |
 | 같은 세 프레임에서 모델 발목점과 복사뼈·앞쪽 접힘점의 거리 비교 | [발목 접힘점 판독](notebooks/experiments/20_ankle_fold_landmark.ipynb) |
+| 이륙·무릎 통과에서 가까운 어깨와 골반을 찍고 체간 기울기 변화와 옷 가림 추정 구분 | [두 시점의 체간 기울기](notebooks/experiments/21_trunk_inclination.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
