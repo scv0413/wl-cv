@@ -35,15 +35,15 @@ def shared_pose_predictor(plate_model):
     return PoseWithPlateInput
 
 
-def single_pass_frames(path, plate_model, pose_model, device, share_input, timings):
+def single_pass_frames(path, plate_model, pose_model, device, share_input, timings, *, plate_imgsz=640):
     history = PlateHistory()
-    options = dict(imgsz=640, device=device, verbose=False)
+    options = dict(device=device, verbose=False)
     plate_predictor = PlateInput if share_input else None
     pose_predictor = shared_pose_predictor(plate_model) if share_input else None
     for index, (time_ms, rgb) in enumerate(timed_frames_rgb(path)):
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         start = perf_counter()
-        plate_result, = plate_model.predict(bgr, conf=.001, predictor=plate_predictor, **options)
+        plate_result, = plate_model.predict(bgr, conf=.001, imgsz=plate_imgsz, predictor=plate_predictor, **options)
         boxes = plate_result.boxes.cpu()
         detected = perf_counter()
         # 일괄 처리와 같은 정렬·반경·이력 규칙을 현재 프레임 후보에 적용한다.
@@ -55,7 +55,7 @@ def single_pass_frames(path, plate_model, pose_model, device, share_input, timin
         values = {k: np.nan if chosen is None else chosen[k] for k in ["confidence", "cx", "cy", *BOX]}
         plate = SimpleNamespace(video_id=path.stem, frame_index=index, source=source, **values)
         tracked = perf_counter()
-        pose_result, = pose_model.predict(bgr, conf=.25, predictor=pose_predictor, **options)
+        pose_result, = pose_model.predict(bgr, conf=.25, imgsz=640, predictor=pose_predictor, **options)
         result = pose_result.cpu().numpy()
         timings["plate_inference"] += detected - start
         timings["plate_tracking"] += tracked - detected
