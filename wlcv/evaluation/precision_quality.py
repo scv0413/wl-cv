@@ -44,9 +44,8 @@ def plate_metrics(manifest, outputs, folder):
         ).reshape(-1, 4)
         truth = xywhn2xyxy(truth, w=row.width, h=row.height)
         labels = torch.zeros(len(truth))
-        matched = validator.match_predictions(
-            pred[:, 5], labels, box_iou(truth, pred[:, :4])
-        )
+        overlaps = box_iou(truth, pred[:, :4])
+        matched = validator.match_predictions(pred[:, 5], labels, overlaps)
         metric.update_stats(
             dict(
                 tp=matched.numpy(),
@@ -69,14 +68,20 @@ def plate_metrics(manifest, outputs, folder):
                 person=row.person,
                 frame=row.frame,
                 active=row.active,
+                best_iou=float(overlaps.max()) if len(truth) == 1 and len(pred) else np.nan,
                 tp=tp,
                 fp=len(direct) - tp,
                 fn=len(truth) - tp,
             )
         )
     metric.process()
+    threshold_ap = pd.DataFrame({
+        "iou": [round(float(value), 2) for value in validator.iouv],
+        "ap": metric.box.all_ap[0],
+    })
     return (
         dict(mAP50=metric.box.map50, mAP50_95=metric.box.map),
+        threshold_ap,
         pd.DataFrame(counts),
         pd.DataFrame(boxes, columns=KEY + ["confidence"] + BOX),
     )
@@ -230,7 +235,7 @@ def score(folder, runtimes):
     manifest = pd.read_csv(folder / "local_frames.csv")
     tables = {
         name: []
-        for name in ("map", "photo_counts", "hubs", "rise", "performers", "joints")
+        for name in ("map", "ap_by_iou", "photo_counts", "hubs", "rise", "performers", "joints")
     }
     for runtime in runtimes:
         archives = {}
@@ -248,7 +253,7 @@ def score(folder, runtimes):
                     or not np.isfinite(raw).all()
                 ):
                     raise ValueError(f"{runtime} {model} 출력 형식이 다릅니다.")
-        metrics, photos, boxes = plate_metrics(manifest, archives["plate"], folder)
+        metrics, thresholds, photos, boxes = plate_metrics(manifest, archives["plate"], folder)
         hubs, rise = score_hubs(boxes)
         with (
             np.load(payload / "inputs.npz") as inputs,
@@ -259,6 +264,7 @@ def score(folder, runtimes):
             tables,
             (
                 pd.DataFrame([metrics]),
+                thresholds,
                 photos,
                 hubs,
                 pd.DataFrame([rise]),
