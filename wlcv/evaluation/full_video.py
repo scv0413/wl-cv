@@ -29,6 +29,11 @@ def detect_videos(weights, video_ids, *, split_csv=SPLIT, device="cpu", imgsz=64
     """신뢰도 0.001 이상의 후보를 보관한다. 후보가 없는 프레임도 프레임 표에 남긴다."""
     video_ids = list(video_ids)
     model = validation_plate_model(weights, video_ids, split_csv)
+    return predict_plate_videos(model, video_ids, device=device, imgsz=imgsz)
+
+
+def predict_plate_videos(model, video_ids, *, device="cpu", imgsz=640):
+    """선택한 영상의 모든 프레임을 추론한다. 대상 분할은 호출자가 확인한다."""
     metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
     frames, candidates = [], []
     for video in video_ids:

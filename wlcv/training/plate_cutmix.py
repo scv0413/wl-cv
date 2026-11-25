@@ -89,10 +89,8 @@ def longest_miss(group, column):
     return longest
 
 
-def score_pair(control, trial):
-    """동일한 동작 구간·수동 박스에서 두 모델을 평가하고 구간별 최장 미탐을 계산한다."""
-    from wlcv.evaluation.schedule_review import compare_runs
-
+def check_same_labels(control, trial):
+    """프레임별 수동 정답과 채점 가능 여부가 정확히 일치해야 한다."""
     keys = ["video_id", "frame_index", "method"]
     truth = ["in_motion", "visibility", "manual_x", "manual_y", "gt_x1", "gt_y1", "gt_x2", "gt_y2"]
     first = control.set_index(keys).sort_index()
@@ -101,7 +99,14 @@ def score_pair(control, trial):
     same_scored_frames = first["match"].notna().equals(second["match"].notna())
     if not (same_labels and same_scored_frames):
         raise ValueError("두 실행의 평가 구간, 채점 프레임 또는 수동 정답이 다릅니다.")
-    pair = compare_runs(control, trial, labels=("base", "trial")).sort_values(keys)
+
+
+def score_pair(control, trial):
+    """동일한 동작 구간·수동 박스에서 두 모델을 평가하고 구간별 최장 미탐을 계산한다."""
+    from wlcv.evaluation.schedule_review import compare_runs
+
+    check_same_labels(control, trial)
+    pair = compare_runs(control, trial, labels=("base", "trial")).sort_values(["video_id", "frame_index", "method"])
     early = pair.video_id.eq("a03_sn_f_01") & pair.frame_index.between(2, 14)
     scopes = [("a03 2~14번", pair[early]), ("동작 중 전체", pair)]
     scopes.extend(pair.groupby("video_id", sort=True))
