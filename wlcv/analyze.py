@@ -20,7 +20,8 @@ from wlcv.evaluation.phase_speed import vertical_speeds
 from wlcv.evaluation.catch_offset import FACING
 from wlcv.config import ANNOTATIONS, ROOT, RUNS, VIDEOS
 from wlcv.data.frames import timed_frames_rgb
-from wlcv.evaluation.full_video import detect_videos
+from wlcv.evaluation.full_video import detect_videos, validation_plate_model
+from wlcv.evaluation.single_pass import single_pass_frames
 from wlcv.evaluation.plate_track import select_centers
 from wlcv.evaluation.plots import predict_rgb
 from wlcv.evaluation.video_overlay import PLATE_STATES, draw_caption, draw_plate, draw_pose
@@ -81,35 +82,39 @@ def coaching_summary(rows, lift, knee, events, facing):
     return result
 
 
-def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events=None, *, device="cpu", timings=None):
+def two_pass_frames(path, plates, pose_model, device, timings):
+    pairs = zip(timed_frames_rgb(path), plates.itertuples(index=False), strict=True)
+    for (time_ms, rgb), plate in pairs:
+        started = perf_counter()
+        result = predict_rgb(pose_model, rgb, conf=0.25, imgsz=640, device=device).cpu().numpy()
+        timings["pose"] += perf_counter() - started
+        yield time_ms, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), plate, result
+
+
+def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, timings):
     writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"avc1"), fps,
                              (int(info.width), int(info.height)))
     if not writer.isOpened():
         raise OSError("H.264 영상을 저장할 수 없습니다. OpenCV의 avc1 지원을 확인하세요.")
     records = []
-    pose_seconds = draw_seconds = write_seconds = 0.0
+    draw_seconds = write_seconds = 0.0
     trail = deque(maxlen=12)
     events = {lift: ("이륙", "lift-off"), knee: ("무릎 통과", "knee pass")}
     for name, korean in [("drive", "접촉"), ("catch", "캐치")]:
         if name in (phase_events or {}):
             events[phase_events[name]] = (korean, name)
     try:
-        pairs = zip(timed_frames_rgb(path), plates.itertuples(index=False), strict=True)
-        for index, ((time_ms, rgb), plate) in enumerate(tqdm(pairs, total=len(plates), desc="자세와 오버레이", unit="장")):
-            if index != plate.frame_index or rgb.shape[:2] != (info.height, info.width):
+        for index, (time_ms, image, plate, result) in enumerate(
+                tqdm(frame_stream, total=int(info.frame_count), desc="자세와 오버레이", unit="장")):
+            if index != plate.frame_index or image.shape[:2] != (info.height, info.width):
                 raise ValueError(f"{index}번 원본의 크기 또는 프레임 번호를 확인하세요.")
-            started = perf_counter()
-            # CPU로 결과를 가져온 시점에는 해당 프레임의 GPU 추론도 끝난다.
-            result = predict_rgb(pose_model, rgb, conf=0.25, imgsz=640, device=device).cpu().numpy()
-            predicted = perf_counter()
-            pose_seconds += predicted - started
-            image = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            drawing = perf_counter()
             pose = draw_pose(image, result, info.near_side)
             draw_plate(image, plate, trail)
             phase, caption = events.get(index, ("", ""))
             draw_caption(image, plate, pose, caption)
             drawn = perf_counter()
-            draw_seconds += drawn - predicted
+            draw_seconds += drawn - drawing
             writer.write(image)
             write_seconds += perf_counter() - drawn
             records.append({
@@ -122,13 +127,25 @@ def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events
         started = perf_counter()
         writer.release()  # 인코더에 남은 프레임과 MP4 컨테이너를 마무리한다.
         write_seconds += perf_counter() - started
-    if timings is not None:
-        timings.update(pose=pose_seconds, drawing=draw_seconds, writer=write_seconds)
+    if len(records) != info.frame_count:
+        raise ValueError("원본 디코딩 장수와 등록된 프레임 수가 다릅니다.")
+    timings.update(drawing=draw_seconds, writer=write_seconds)
     return pd.DataFrame(records)
 
 
-def analyze(video, *, device="cpu"):
+def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events=None, *, device="cpu", timings=None):
+    """기존 두 번 읽기 렌더링 호출도 동일한 그리기·인코딩 경로를 사용한다."""
+    if timings is None:
+        timings = {}
+    timings["pose"] = 0.0
+    stream = two_pass_frames(path, plates, pose_model, device, timings)
+    return render_frames(stream, info, fps, lift, knee, output, phase_events, timings)
+
+
+def analyze(video, *, device="cpu", read_mode="two-pass"):
     start = perf_counter()
+    if read_mode not in ("two-pass", "single-pass", "single-shared"):
+        raise ValueError("지원하지 않는 영상 읽기 방식입니다.")
     if device not in ("cpu", "mps"):
         raise ValueError("cpu 또는 mps 중 하나를 선택하세요.")
     if device == "mps" and not torch.backends.mps.is_available():
@@ -147,14 +164,24 @@ def analyze(video, *, device="cpu"):
     plate_weights = RUNS / "plate_baseline/weights/best.pt"
     pose_weights = (ROOT / "models/yolo26n-pose.pt").resolve(strict=True)
     configured = perf_counter()
-    frames, candidates = detect_videos(plate_weights, [video], device=device)
-    detected = perf_counter()
-    selected = select_centers(frames, candidates, distance_ratio=0.5)
-    plates = selected.loc[selected.method == "Past link"]
-    tracked = perf_counter()
+    timings = {"setup": configured - start, "pose": 0.0}
+    path = VIDEOS / info.filename
+    if read_mode == "two-pass":
+        frames, candidates = detect_videos(plate_weights, [video], device=device)
+        detected = perf_counter()
+        selected = select_centers(frames, candidates, distance_ratio=0.5)
+        plates = selected.loc[selected.method == "Past link"]
+        timings.update(plate_pass=detected-configured, plate_tracking=perf_counter()-detected)
+    else:
+        plate_model = validation_plate_model(plate_weights, [video])
+        timings.update(plate_load=perf_counter()-configured, plate_inference=0.0, plate_tracking=0.0)
     pose_model = YOLO(str(pose_weights))
     if pose_model.task != "pose":
         raise ValueError(f"자세 추정 가중치를 확인하세요: {pose_weights}")
+    if read_mode == "two-pass":
+        stream = two_pass_frames(path, plates, pose_model, device, timings)
+    else:
+        stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared", timings)
 
     parent = ROOT / "outputs/video_analysis" / video
     parent.mkdir(parents=True, exist_ok=True)
@@ -164,12 +191,9 @@ def analyze(video, *, device="cpu"):
         folder = Path(temp) / "result"
         folder.mkdir()
         overlay = folder / "overlay.mp4"
-        timings = {"setup": configured - start, "plate_pass": detected - configured,
-                   "plate_tracking": tracked - detected}
-        rows = render(VIDEOS / info.filename, plates, info, fps, pose_model, lift, knee, overlay,
-                      events, device=device, timings=timings)
+        rows = render_frames(stream, info, fps, lift, knee, overlay, events, timings)
         rendered = perf_counter()
-        timings["render_other"] = rendered - tracked - sum(timings[k] for k in ("pose", "drawing", "writer"))
+        timings["render_other"] = rendered - start - sum(timings.values())
         check = cv2.VideoCapture(str(overlay))
         try:
             if not check.isOpened() or int(check.get(cv2.CAP_PROP_FRAME_COUNT)) != len(rows):
@@ -182,7 +206,7 @@ def analyze(video, *, device="cpu"):
                    "overlay_fps": fps, "near_side": info.near_side,
                    "plate_weights": str(plate_weights), "pose_weights": str(pose_weights),
                    "coaching": coaching_summary(rows, lift, knee, events, FACING.get(video)),
-                   "device": device, "manual_phase_interval": phase_summary(rows, lift, knee)}
+                   "device": device, "read_mode": read_mode, "manual_phase_interval": phase_summary(rows, lift, knee)}
         endpoint_angles = rows.set_index("frame_index").loc[[lift, knee], "trunk_angle_deg"]
         summary["trunk_change_deg"] = (float(endpoint_angles.loc[knee] - endpoint_angles.loc[lift])
                                        if endpoint_angles.notna().all() else None)
@@ -201,8 +225,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("video_id", help="검증 영상 ID (예: c04_sn_f_01)")
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu", help="원판·자세 추론 장치")
+    parser.add_argument("--read-mode", choices=("two-pass", "single-pass", "single-shared"),
+                        default="two-pass", help="원본 읽기 횟수와 모델 전처리 공유 여부")
     args = parser.parse_args()
-    output, summary = analyze(args.video_id, device=args.device)
+    output, summary = analyze(args.video_id, device=args.device, read_mode=args.read_mode)
     interval = summary["manual_phase_interval"]
     print(f"전체 {summary['frame_count']}프레임 · {summary['plate_counts']}")
     if interval["rise_px"] is None:
