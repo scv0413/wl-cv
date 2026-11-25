@@ -1,0 +1,7 @@
+video_id,frame_index,x1,y1,x2,y2,source
+a03_sn_f_01,25,339,560,453,893,assistant_original_only
+a05_sn_f_01,22,178,287,262,680,assistant_original_only
+a05_sn_f_01,23,168,276,266,680,assistant_original_only
+b03_sn_f_01,17,376,1060,712,1668,assistant_original_only
+c08_sn_f_01,20,316,1108,780,1736,assistant_original_only
+c08_sn_f_01,21,312,1096,776,1736,assistant_original_only
