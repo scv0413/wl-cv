@@ -121,7 +121,8 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
                 "video_id": plate.video_id, "frame_index": index, "source_time_ms": time_ms,
                 "manual_phase": phase, "plate_status": PLATE_STATES[plate.source][0],
                 "plate_confidence": plate.confidence, "plate_cx_px": plate.cx, "plate_cy_px": plate.cy,
-                **pose,
+                "plate_x1": plate.x1, "plate_y1": plate.y1,
+                "plate_x2": plate.x2, "plate_y2": plate.y2, **pose,
             })
     finally:
         started = perf_counter()
@@ -142,10 +143,14 @@ def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events
     return render_frames(stream, info, fps, lift, knee, output, phase_events, timings)
 
 
-def analyze(video, *, device="cpu", read_mode="two-pass"):
+def analyze(video, *, device="cpu", read_mode="two-pass", plate_imgsz=640):
     start = perf_counter()
     if read_mode not in ("two-pass", "single-pass", "single-shared"):
         raise ValueError("지원하지 않는 영상 읽기 방식입니다.")
+    if plate_imgsz <= 0 or plate_imgsz % 32:
+        raise ValueError("원판 입력 크기는 양의 32 배수여야 합니다.")
+    if read_mode == "single-shared" and plate_imgsz != 640:
+        raise ValueError("입력 텐서를 공유하려면 원판과 자세 크기가 모두 640이어야 합니다.")
     if device not in ("cpu", "mps"):
         raise ValueError("cpu 또는 mps 중 하나를 선택하세요.")
     if device == "mps" and not torch.backends.mps.is_available():
@@ -167,7 +172,7 @@ def analyze(video, *, device="cpu", read_mode="two-pass"):
     timings = {"setup": configured - start, "pose": 0.0}
     path = VIDEOS / info.filename
     if read_mode == "two-pass":
-        frames, candidates = detect_videos(plate_weights, [video], device=device)
+        frames, candidates = detect_videos(plate_weights, [video], device=device, imgsz=plate_imgsz)
         detected = perf_counter()
         selected = select_centers(frames, candidates, distance_ratio=0.5)
         plates = selected.loc[selected.method == "Past link"]
@@ -181,7 +186,8 @@ def analyze(video, *, device="cpu", read_mode="two-pass"):
     if read_mode == "two-pass":
         stream = two_pass_frames(path, plates, pose_model, device, timings)
     else:
-        stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared", timings)
+        stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared", timings,
+                                    plate_imgsz=plate_imgsz)
 
     parent = ROOT / "outputs/video_analysis" / video
     parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +212,7 @@ def analyze(video, *, device="cpu", read_mode="two-pass"):
                    "overlay_fps": fps, "near_side": info.near_side,
                    "plate_weights": str(plate_weights), "pose_weights": str(pose_weights),
                    "coaching": coaching_summary(rows, lift, knee, events, FACING.get(video)),
+                   "plate_imgsz": plate_imgsz, "pose_imgsz": 640,
                    "device": device, "read_mode": read_mode, "manual_phase_interval": phase_summary(rows, lift, knee)}
         endpoint_angles = rows.set_index("frame_index").loc[[lift, knee], "trunk_angle_deg"]
         summary["trunk_change_deg"] = (float(endpoint_angles.loc[knee] - endpoint_angles.loc[lift])
@@ -227,8 +234,9 @@ def main():
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu", help="원판·자세 추론 장치")
     parser.add_argument("--read-mode", choices=("two-pass", "single-pass", "single-shared"),
                         default="two-pass", help="원본 읽기 횟수와 모델 전처리 공유 여부")
+    parser.add_argument("--plate-imgsz", type=int, default=640, help="원판 모델 입력 긴 변 (자세는 640)")
     args = parser.parse_args()
-    output, summary = analyze(args.video_id, device=args.device, read_mode=args.read_mode)
+    output, summary = analyze(args.video_id, device=args.device, read_mode=args.read_mode, plate_imgsz=args.plate_imgsz)
     interval = summary["manual_phase_interval"]
     print(f"전체 {summary['frame_count']}프레임 · {summary['plate_counts']}")
     if interval["rise_px"] is None:

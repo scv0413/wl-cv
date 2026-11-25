@@ -25,7 +25,7 @@ def validation_plate_model(weights, video_ids, split_csv=SPLIT):
     return model
 
 
-def detect_videos(weights, video_ids, *, split_csv=SPLIT, device="cpu"):
+def detect_videos(weights, video_ids, *, split_csv=SPLIT, device="cpu", imgsz=640):
     """신뢰도 0.001 이상의 후보를 보관한다. 후보가 없는 프레임도 프레임 표에 남긴다."""
     video_ids = list(video_ids)
     model = validation_plate_model(weights, video_ids, split_csv)
@@ -37,7 +37,7 @@ def detect_videos(weights, video_ids, *, split_csv=SPLIT, device="cpu"):
         for index, rgb in enumerate(tqdm(frames_rgb(VIDEOS / f"{video}.mp4"),
                                          total=expected, desc=video, unit="장")):
             frames.append((video, index))
-            boxes = predict_rgb(model, rgb, conf=0.001, imgsz=640, device=device).boxes.cpu()
+            boxes = predict_rgb(model, rgb, conf=0.001, imgsz=imgsz, device=device).boxes.cpu()
             for conf, coords in zip(boxes.conf.tolist(), boxes.xyxy.tolist()):
                 candidates.append((video, index, conf, *coords))
             decoded += 1
