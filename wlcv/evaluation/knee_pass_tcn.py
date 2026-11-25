@@ -82,10 +82,11 @@ def result(video, s, method, frame, seed=None, n_train=None):
     return row
 
 
-def run(source, seeds=(0,1,2)):
+def run(source, seeds=(0,1,2), *, output_parent=None):
     """7회차에 동일 설정을 쓰고 seed 0을 주 비교로 지정한다. 가중치는 로컬에 보관한다."""
     data = clips(source)
-    dest = ROOT / "outputs/knee_pass_tcn" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    parent = ROOT / "outputs/knee_pass_tcn" if output_parent is None else Path(output_parent)
+    dest = parent / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     dest.mkdir(parents=True)
     rows = []
     for video, s in tqdm(data.items(), desc="제외 선수", unit="명"):
