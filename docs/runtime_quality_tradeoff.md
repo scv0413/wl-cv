@@ -27,10 +27,10 @@ Mac MPS에서는 두 모델이 같은 원본을 한 번만 읽도록 바꿨다. 
 
 원판 입력을 512로 낮추면 네 차례 반복한 명령 전체 중앙값이 c04에서 8.74초 → 8.58초였지만 b02에서는 7.90초 → 7.99초였다. b02의 수동 이륙→무릎 통과 상승량(+252.00 px)을 작게 잡은 정도도 3.81 px에서 10.07 px로 커졌다. Mac에서는 두 모델의 입력 640과 한 번 읽기를 유지한다. [입력 크기 비교](plate_input_size_mps.md)
 
-## NVIDIA GPU에서 남은 판단
+## NVIDIA GPU에서 측정한 범위와 남은 검증
 
 같은 GPU에서 PyTorch CUDA FP32, ONNX Runtime CUDA FP32, TensorRT FP32를 비교해 엔진 효과를 먼저 측정한다. 다음으로 TensorRT FP32와 FP16을 비교해 정밀도를 낮췄을 때의 차이를 구한다. 가중치, 배치 1, 입력 형태, NMS, 시간 연결과 수행자 보류 규칙을 고정하고 실행 정밀도·TF32 설정, GPU 모델·소프트웨어 버전을 기록한다.
 
 - 합성 입력으로는 엔진 생성과 첫 실행을 따로 재고, 예열 후 동기화한 추론 p50·p95와 처리량을 비교할 수 있다. 실제 입력 사용 범위가 결정되면 같은 39장으로 mAP 차이를 %p로 보고, 동작 중 원판 정탐을 새로 얻거나 잃은 프레임, 수동 허브의 세로 오차·상승량, 관절 위치·표시·체간 변화 방향을 대조한다. 누락된 장면을 좌표 오차 집계에서 별도 표시한다. [NVIDIA 성능 측정](https://docs.nvidia.com/deeplearning/tensorrt/latest/performance/benchmarking.html)
 - 한 편의 처리 시간은 디코딩, 전처리·데이터 전송, 두 모델 추론, NMS·좌표 복원, 시간 연결, 오버레이·인코딩·저장까지 측정한다. 같은 세로 영상과 출력 규격에서 반복한 전체 초와 실제 처리 fps를 기재한다. 빠른 엔진이 동작 중 미탐이나 상승량·각도의 방향을 바꿨다면 그 사례와 손익을 함께 보고 채택을 결정한다.
-- FP16은 부동소수점 정밀도를 낮추는 비교다. INT8 학습 후 양자화는 FP16 이후에도 추론이 병목이고 대표적인 **학습 선수 측** 보정 자료를 확보했을 때 진행한다. 검증 6명은 보정에 사용하지 않는다. TensorRT의 지연과 품질은 아직 미측정이다. [NVIDIA 양자화 안내](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/inference-library/work-quantized-types.html)
+- FP16은 부동소수점 정밀도를 낮추는 비교다. INT8 학습 후 양자화는 FP16 이후에도 추론이 병목이고 대표적인 **학습 선수 측** 보정 자료를 확보했을 때 진행한다. 검증 6명은 보정에 사용하지 않는다. RTX 3090 합성 영상 116장의 명령 전체 평균은 PyTorch 5.08초, ORT CUDA 5.52초, TensorRT FP32 4.06초, TensorRT FP16 허용 3.79초였다. 실제 선수 영상의 TensorRT mAP와 관절 오차는 미측정이다. [3090 실측과 FP16 좌표 차이](tensorrt_3090.md) [NVIDIA 양자화 안내](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/inference-library/work-quantized-types.html)
