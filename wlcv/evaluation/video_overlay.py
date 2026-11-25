@@ -3,6 +3,7 @@
 import cv2
 
 from wlcv.evaluation.pose import joint_table
+from wlcv.evaluation.trunk import vertical_angle
 
 PLATE_STATES = {
     "high": ("직접 검출", "DIRECT", (95, 230, 100)),
@@ -16,7 +17,7 @@ def draw_pose(image, result, near_side):
     """수행자 후보가 하나일 때만 가까운 쪽 어깨·골반·무릎·발목을 연결한다."""
     count = len(result.boxes)
     record = {"person_candidates": count, "pose_side": near_side, "joints_drawn": 0,
-              "shoulder_x_px": None, "shoulder_y_px": None}
+              "shoulder_x_px": None, "shoulder_y_px": None, "trunk_angle_deg": None}
     if count != 1:
         return record
 
@@ -29,6 +30,9 @@ def draw_pose(image, result, near_side):
         if point["관절"] == "어깨":
             record["shoulder_x_px"] = float(point["x (px)"])
             record["shoulder_y_px"] = float(point["y (px)"])
+        if point["관절"] == "골반" and record["shoulder_x_px"] is not None:
+            shoulder = (record["shoulder_x_px"], record["shoulder_y_px"])
+            record["trunk_angle_deg"] = vertical_angle(shoulder, (point["x (px)"], point["y (px)"]))
         xy = (round(point["x (px)"]), round(point["y (px)"]))
         if previous is not None:
             cv2.line(image, previous, xy, POSE_COLOR, 4, cv2.LINE_AA)
