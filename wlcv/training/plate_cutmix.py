@@ -75,28 +75,68 @@ def train():
     return run
 
 
+def longest_miss(group, column):
+    """평가되지 않은 프레임을 건너뛰어 연속 미탐으로 세지 않는다."""
+    longest = current = 0
+    previous_video = previous_frame = None
+    for video, frame, hit in group[["video_id", "frame_index", column]].itertuples(index=False, name=None):
+        if video != previous_video or frame != previous_frame + 1 or hit:
+            current = 0
+        if not hit:
+            current += 1
+            longest = max(longest, current)
+        previous_video, previous_frame = video, frame
+    return longest
+
+
+def score_pair(control, trial):
+    """동일한 동작 구간·수동 박스에서 두 모델을 평가하고 구간별 최장 미탐을 계산한다."""
+    from wlcv.evaluation.schedule_review import compare_runs
+
+    keys = ["video_id", "frame_index", "method"]
+    truth = ["in_motion", "visibility", "manual_x", "manual_y", "gt_x1", "gt_y1", "gt_x2", "gt_y2"]
+    first = control.set_index(keys).sort_index()
+    second = trial.set_index(keys).sort_index()
+    same_labels = first[truth].equals(second[truth])
+    same_scored_frames = first["match"].notna().equals(second["match"].notna())
+    if not (same_labels and same_scored_frames):
+        raise ValueError("두 실행의 평가 구간, 채점 프레임 또는 수동 정답이 다릅니다.")
+    pair = compare_runs(control, trial, labels=("base", "trial")).sort_values(keys)
+    early = pair.video_id.eq("a03_sn_f_01") & pair.frame_index.between(2, 14)
+    scopes = [("a03 2~14번", pair[early]), ("동작 중 전체", pair)]
+    scopes.extend(pair.groupby("video_id", sort=True))
+    rows = []
+    for scope, subset in scopes:
+        for method, group in subset.groupby("method", sort=True):
+            rows.append({
+                "평가 구간": scope, "방법": method, "평가 장수": len(group),
+                "기존 미탐": int((~group.match_base).sum()),
+                "비교 미탐": int((~group.match_trial).sum()),
+                "복구": int(group.change.eq("복구").sum()), "손실": int(group.change.eq("손실").sum()),
+                "기존 최장 연속 미탐": longest_miss(group, "match_base"),
+                "비교 최장 연속 미탐": longest_miss(group, "match_trial"),
+            })
+    return pair, pd.DataFrame(rows)
+
+
 def compare(trial):
-    """같은 CPU 판정에서 두 모델의 a03 준비 구간과 검증 동작 중 확보·손실을 센다."""
+    """같은 CPU 조건에서 검출 mAP와 원본 동작 중 연속 미탐·복구·손실을 보존한다."""
     from wlcv.evaluation.schedule_review import evaluate_run
 
     control = RUNS / "plate_baseline"
     data = Path(baseline_settings()["data"])
     folder = trial / "paired_review"
     folder.mkdir(exist_ok=True)
-    frames = {}
-    for name, run in (("baseline",control),("cutmix",trial)):
-        metric, detail = evaluate_run(run,data,folder)
-        detail.to_csv(folder/f"{name}_frames.csv",index=False)
-        frames[name] = detail[detail.in_motion & detail.match.notna()].copy()
-        print(name, "mAP50–95", metric)
-    keys = ["video_id","frame_index","method"]
-    pair = frames["baseline"].merge(frames["cutmix"],on=keys,suffixes=("_base","_trial"),
-                                    how="outer",validate="one_to_one",indicator=True)
-    if not pair["_merge"].eq("both").all():
-        raise ValueError("두 모델의 평가 프레임이 다릅니다.")
-    pair["recovered"] = ~pair.match_base & pair.match_trial
-    pair["lost"] = pair.match_base & ~pair.match_trial
-    pair.to_csv(folder/"paired_frames.csv",index=False)
-    early = pair.video_id.eq("a03_sn_f_01") & pair.frame_index.between(2,14)
-    return pd.concat({scope: sub.groupby("method")[["match_base","match_trial","recovered","lost"]].sum()
-                      for scope,sub in (("a03 2~14번",pair[early]),("동작 중 전체",pair))})
+    metrics, frames = [], {}
+    for name, run in (("baseline", control), ("cutmix", trial)):
+        metric, detail = evaluate_run(run, data, folder)
+        detail.to_csv(folder / f"{name}_frames.csv", index=False)
+        frames[name] = detail
+        metrics.append({"실행": name, "mAP50–95": metric})
+    metrics = pd.DataFrame(metrics)
+    metrics.to_csv(folder / "metrics.csv", index=False)
+    pair, summary = score_pair(frames["baseline"], frames["cutmix"])
+    pair.to_csv(folder / "paired_frames.csv", index=False)
+    summary.to_csv(folder / "summary.csv", index=False)
+    print(metrics.to_string(index=False))
+    return summary
