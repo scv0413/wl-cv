@@ -41,7 +41,7 @@ def link_low_candidate(candidates, history, frame, *, distance_ratio=0.5, checks
 
 
 def select_centers(frames, candidates, *, distance_ratio=0.5, checks=None,
-                   gate_high_history=False, high_checks=None, history_checks=None):
+                   gate_high_history=False, high_checks=None, history_checks=None, show_progress=True):
     """정답 좌표·IoU 없이 후보를 선택한다. 두 방법의 고신뢰 선택은 같다."""
     if not np.isfinite(distance_ratio) or distance_ratio <= 0:
         raise ValueError("연결 거리 배율은 양의 유한한 수여야 합니다.")
@@ -57,7 +57,7 @@ def select_centers(frames, candidates, *, distance_ratio=0.5, checks=None,
         indices = segment.frame_index.sort_values()
         if not indices.diff().dropna().eq(1).all():
             raise ValueError(f"{video}의 연속 프레임을 확인하세요.")
-        for frame in tqdm(indices, desc=video, unit="장"):
+        for frame in tqdm(indices, desc=video, unit="장", disable=not show_progress):
             key = (video, frame)
             now = grouped.get_group(key) if key in grouped.groups else c.iloc[:0]
             strong = now[now.confidence >= .10]
