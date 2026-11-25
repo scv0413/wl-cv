@@ -119,20 +119,21 @@ def score_pair(control, trial):
     return pair, pd.DataFrame(rows)
 
 
-def compare(trial):
+def compare(trial, *, control=None, output=None):
     """같은 CPU 조건에서 검출 mAP와 원본 동작 중 연속 미탐·복구·손실을 보존한다."""
     from wlcv.evaluation.schedule_review import evaluate_run
 
-    control = RUNS / "plate_baseline"
+    trial = Path(trial)
+    control = RUNS / "plate_baseline" if control is None else Path(control)
     data = Path(baseline_settings()["data"])
-    folder = trial / "paired_review"
-    folder.mkdir(exist_ok=True)
+    folder = trial / "paired_review" if output is None else Path(output)
+    folder.mkdir(parents=True, exist_ok=True)
     metrics, frames = [], {}
     for name, run in (("baseline", control), ("cutmix", trial)):
         metric, detail = evaluate_run(run, data, folder)
         detail.to_csv(folder / f"{name}_frames.csv", index=False)
         frames[name] = detail
-        metrics.append({"실행": name, "mAP50–95": metric})
+        metrics.append({"실행": name, "실행 폴더": run.name, "mAP50–95": metric})
     metrics = pd.DataFrame(metrics)
     metrics.to_csv(folder / "metrics.csv", index=False)
     pair, summary = score_pair(frames["baseline"], frames["cutmix"])
