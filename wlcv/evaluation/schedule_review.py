@@ -69,7 +69,7 @@ def evaluate_motion(weights, data):
     return detail
 
 
-def compare_runs(control, trial, *, labels=("100", "200")):
+def compare_runs(control, trial, *, labels=("100", "200"), motion_only=True):
     """같은 프레임·후처리에서 어느 모델이 정탐을 얻고 잃었는지 연결한다."""
     keys = KEY + ["method"]
     fixed = ["in_motion", "visibility", "gt_x1", "gt_y1", "gt_x2", "gt_y2", "manual_x", "manual_y"]
@@ -82,7 +82,9 @@ def compare_runs(control, trial, *, labels=("100", "200")):
         raise ValueError("두 실행의 프레임 목록을 확인하세요.")
     match_first = f"match_{first}"
     match_second = f"match_{second}"
-    valid = pair.in_motion & pair[match_first].notna() & pair[match_second].notna()
+    valid = pair[match_first].notna() & pair[match_second].notna()
+    if motion_only:
+        valid &= pair.in_motion
     result = pair.loc[valid].copy()
     result["change"] = "모두 미탐"
     result.loc[result[match_first] & result[match_second], "change"] = "모두 정탐"
