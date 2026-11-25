@@ -40,61 +40,82 @@ def link_low_candidate(candidates, history, frame, *, distance_ratio=0.5, checks
     return nearby.loc[distance.loc[nearby.index].idxmin()]
 
 
+def prepare_candidates(candidates):
+    """중심을 계산하고 같은 신뢰도에서는 원래 후보 순서를 보존한다."""
+    c = candidates[KEY + ["confidence"] + BOX].copy()
+    c["cx"] = (c.x1 + c.x2) / 2
+    c["cy"] = (c.y1 + c.y2) / 2
+    c = c[c.confidence >= .001].sort_values("confidence", ascending=False, kind="stable")
+    return c
+
+
+class PlateHistory:
+    """한 영상의 최근 관측 두 점과 마지막 고신뢰 프레임을 기억한다."""
+
+    def __init__(self):
+        self.history = []
+        self.last_high = None
+
+    def choose(self, now, video, frame, *, distance_ratio=0.5, checks=None,
+               gate_high_history=False, high_checks=None, history_checks=None):
+        """prepare_candidates로 정렬된 현재 프레임의 후보를 연결한다."""
+        strong = now[now.confidence >= .10]
+        high = None if strong.empty else strong.iloc[0]
+        chosen = high
+        source = "high" if high is not None else "missing"
+        if self.last_high is not None and frame - self.last_high > 2:
+            self.history = []
+        # 선택 직전의 이력을 기록한다. 직접 검출에서는 이 반경을 적용하지 않는다.
+        if history_checks is not None and self.history:
+            ex, ey = expected_center(self.history, frame)
+            last = self.history[-1][1]
+            history_checks.append(dict(video_id=video, frame_index=frame, expected_x=ex,
+                                       expected_y=ey, radius_px=(last.x2-last.x1)*distance_ratio))
+        add_to_history = True
+        if high is not None:
+            # 고신뢰 출력과 2프레임 시계는 두 조건에서 동일하다.
+            self.last_high = frame
+            if gate_high_history and self.history:
+                expected_x, expected_y = expected_center(self.history, frame)
+                last = self.history[-1][1]
+                radius = (last.x2 - last.x1) * distance_ratio
+                distance = np.hypot(high.cx - expected_x, high.cy - expected_y)
+                add_to_history = distance <= radius
+                if high_checks is not None:
+                    high_checks.append(dict(video_id=video, frame_index=frame,
+                                            last_history_frame=self.history[-1][0],
+                                            expected_x=expected_x, expected_y=expected_y,
+                                            radius_px=radius, distance_px=distance,
+                                            stored=bool(add_to_history)))
+        elif self.history:
+            chosen = link_low_candidate(now, self.history, frame,
+                                        distance_ratio=distance_ratio, checks=checks)
+            if chosen is not None:
+                source = "linked"
+        if chosen is not None and add_to_history:
+            self.history = (self.history + [(frame, chosen)])[-2:]
+        return high, chosen, source
+
+
 def select_centers(frames, candidates, *, distance_ratio=0.5, checks=None,
                    gate_high_history=False, high_checks=None, history_checks=None, show_progress=True):
     """정답 좌표·IoU 없이 후보를 선택한다. 두 방법의 고신뢰 선택은 같다."""
     if not np.isfinite(distance_ratio) or distance_ratio <= 0:
         raise ValueError("연결 거리 배율은 양의 유한한 수여야 합니다.")
-    c = candidates[KEY + ["confidence"] + BOX].copy()
-    c["cx"] = (c.x1 + c.x2) / 2
-    c["cy"] = (c.y1 + c.y2) / 2
-    c = c[c.confidence >= .001].sort_values("confidence", ascending=False, kind="stable")
+    c = prepare_candidates(candidates)
     grouped = c.groupby(KEY)
     rows = []
     for video, segment in frames[KEY].groupby("video_id"):
-        history = []
-        last_high = None
+        tracker = PlateHistory()
         indices = segment.frame_index.sort_values()
         if not indices.diff().dropna().eq(1).all():
             raise ValueError(f"{video}의 연속 프레임을 확인하세요.")
         for frame in tqdm(indices, desc=video, unit="장", disable=not show_progress):
             key = (video, frame)
             now = grouped.get_group(key) if key in grouped.groups else c.iloc[:0]
-            strong = now[now.confidence >= .10]
-            high = None if strong.empty else strong.iloc[0]
-            chosen = high
-            source = "high" if high is not None else "missing"
-            if last_high is not None and frame - last_high > 2:
-                history = []
-            # 선택 직전의 이력을 기록한다. 직접 검출에서는 이 반경을 적용하지 않는다.
-            if history_checks is not None and history:
-                ex, ey = expected_center(history, frame)
-                last = history[-1][1]
-                history_checks.append(dict(video_id=video, frame_index=frame, expected_x=ex,
-                                           expected_y=ey, radius_px=(last.x2-last.x1)*distance_ratio))
-            add_to_history = True
-            if high is not None:
-                # 고신뢰 출력과 2프레임 시계는 두 조건에서 동일하다.
-                last_high = frame
-                if gate_high_history and history:
-                    expected_x, expected_y = expected_center(history, frame)
-                    last = history[-1][1]
-                    radius = (last.x2 - last.x1) * distance_ratio
-                    distance = np.hypot(high.cx - expected_x, high.cy - expected_y)
-                    add_to_history = distance <= radius
-                    if high_checks is not None:
-                        high_checks.append(dict(video_id=video, frame_index=frame,
-                                                last_history_frame=history[-1][0],
-                                                expected_x=expected_x, expected_y=expected_y,
-                                                radius_px=radius, distance_px=distance,
-                                                stored=bool(add_to_history)))
-            elif history:
-                chosen = link_low_candidate(now, history, frame,
-                                            distance_ratio=distance_ratio, checks=checks)
-                if chosen is not None:
-                    source = "linked"
-            if chosen is not None and add_to_history:
-                history = (history + [(frame, chosen)])[-2:]
+            high, chosen, source = tracker.choose(
+                now, video, frame, distance_ratio=distance_ratio, checks=checks,
+                gate_high_history=gate_high_history, high_checks=high_checks, history_checks=history_checks)
             for method, choice, origin in [("YOLO", high, "high" if high is not None else "missing"),
                                             ("Past link", chosen, source)]:
                 row = dict(video_id=video, frame_index=frame, method=method, source=origin)

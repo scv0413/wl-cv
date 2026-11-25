@@ -13,18 +13,25 @@ from wlcv.evaluation.plate_track import BOX, KEY, select_centers
 from wlcv.evaluation.plots import predict_rgb
 
 
-def detect_videos(weights, video_ids, *, split_csv=SPLIT, device="cpu"):
-    """신뢰도 0.001 이상의 후보를 보관한다. 후보가 없는 프레임도 프레임 표에 남긴다."""
+def validation_plate_model(weights, video_ids, split_csv=SPLIT):
     model = YOLO(str(Path(weights).resolve(strict=True)))
     if model.names != {0: "plate"}:
         raise ValueError("원판 탐지 가중치가 필요합니다.")
     split = pd.read_csv(split_csv).set_index("video_id", verify_integrity=True)
     trained = set(pd.read_csv(weights.parent.parent / "train_people.csv").person_id)
-    metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
-    frames, candidates = [], []
     for video in video_ids:
         if split.at[video, "role"] != "validation" or split.at[video, "person_id"] in trained:
             raise ValueError(f"{video}의 학습·검증 분할을 확인하세요.")
+    return model
+
+
+def detect_videos(weights, video_ids, *, split_csv=SPLIT, device="cpu"):
+    """신뢰도 0.001 이상의 후보를 보관한다. 후보가 없는 프레임도 프레임 표에 남긴다."""
+    video_ids = list(video_ids)
+    model = validation_plate_model(weights, video_ids, split_csv)
+    metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
+    frames, candidates = [], []
+    for video in video_ids:
         expected = int(metadata.at[video, "frame_count"])
         decoded = 0
         for index, rgb in enumerate(tqdm(frames_rgb(VIDEOS / f"{video}.mp4"),
