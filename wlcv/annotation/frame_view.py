@@ -33,6 +33,7 @@ class FrameView:
         self.rgb = None
 
     def read(self):
+        """표시용 프레임을 준비하고 원본의 (너비, 높이)를 반환한다."""
         self.rgb = None
         self.image.value = b""
         rgb = read_rgb(self.video_path, self.slider.value)
@@ -41,6 +42,7 @@ class FrameView:
         size = (max(1, round(width * scale)), max(1, round(height * scale)))
         self.rgb = cv2.resize(rgb, size, interpolation=cv2.INTER_AREA)
         self.image.layout.width = f"{size[0]}px"
+        return width, height
 
     def show(self, boxes=(), preview=None):
         canvas = self.rgb.copy()

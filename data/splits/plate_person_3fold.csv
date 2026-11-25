@@ -1,0 +1,9 @@
+heldout_fold,person_id,video_id,group,labeled_frames,positive_frames,background_frames,direct_hub_frames,motion_positive_frames,frame_indices
+1,a06,a06_sn_h_01,A,4,4,0,0,4,2 19 23 27
+1,b05,b05_sn_f_01,B,3,0,3,0,0,0 24 47
+1,c02,c02_sn_f_01,C,7,7,0,0,7,9 26 30 34 51 69 102
+2,b04,b04_sn_f_01,B,7,7,0,0,7,5 21 25 29 39 49 95
+2,b06,b06_sn_f_01,B,3,0,3,0,0,11 31 64
+2,c05,c05_sn_f_01,C,7,7,0,0,,3 16 19 23 34 46 102
+3,a01,a01_sn_f_01,A,7,7,0,0,7,3 13 17 21 27 34 83
+3,b01,b01_sn_f_01,B,7,7,0,0,7,9 23 26 30 45 60 123

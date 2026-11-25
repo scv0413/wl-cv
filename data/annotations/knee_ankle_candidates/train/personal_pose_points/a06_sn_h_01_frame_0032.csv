@@ -1,0 +1,3 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+a06_sn_h_01,a06,train,32,right,무릎,located,,386,855
+a06_sn_h_01,a06,train,32,right,발목,located,,315,980
