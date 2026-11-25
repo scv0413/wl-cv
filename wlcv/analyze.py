@@ -6,10 +6,12 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 
 import cv2
 import numpy as np
 import pandas as pd
+import torch
 from tqdm import tqdm
 from ultralytics import YOLO
 
@@ -79,12 +81,13 @@ def coaching_summary(rows, lift, knee, events, facing):
     return result
 
 
-def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events=None):
+def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events=None, *, device="cpu", timings=None):
     writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"avc1"), fps,
                              (int(info.width), int(info.height)))
     if not writer.isOpened():
         raise OSError("H.264 영상을 저장할 수 없습니다. OpenCV의 avc1 지원을 확인하세요.")
     records = []
+    pose_seconds = draw_seconds = write_seconds = 0.0
     trail = deque(maxlen=12)
     events = {lift: ("이륙", "lift-off"), knee: ("무릎 통과", "knee pass")}
     for name, korean in [("drive", "접촉"), ("catch", "캐치")]:
@@ -95,13 +98,20 @@ def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events
         for index, ((time_ms, rgb), plate) in enumerate(tqdm(pairs, total=len(plates), desc="자세와 오버레이", unit="장")):
             if index != plate.frame_index or rgb.shape[:2] != (info.height, info.width):
                 raise ValueError(f"{index}번 원본의 크기 또는 프레임 번호를 확인하세요.")
-            result = predict_rgb(pose_model, rgb, conf=0.25, imgsz=640, device="cpu").cpu().numpy()
+            started = perf_counter()
+            # CPU로 결과를 가져온 시점에는 해당 프레임의 GPU 추론도 끝난다.
+            result = predict_rgb(pose_model, rgb, conf=0.25, imgsz=640, device=device).cpu().numpy()
+            predicted = perf_counter()
+            pose_seconds += predicted - started
             image = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             pose = draw_pose(image, result, info.near_side)
             draw_plate(image, plate, trail)
             phase, caption = events.get(index, ("", ""))
             draw_caption(image, plate, pose, caption)
+            drawn = perf_counter()
+            draw_seconds += drawn - predicted
             writer.write(image)
+            write_seconds += perf_counter() - drawn
             records.append({
                 "video_id": plate.video_id, "frame_index": index, "source_time_ms": time_ms,
                 "manual_phase": phase, "plate_status": PLATE_STATES[plate.source][0],
@@ -109,11 +119,20 @@ def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events
                 **pose,
             })
     finally:
-        writer.release()
+        started = perf_counter()
+        writer.release()  # 인코더에 남은 프레임과 MP4 컨테이너를 마무리한다.
+        write_seconds += perf_counter() - started
+    if timings is not None:
+        timings.update(pose=pose_seconds, drawing=draw_seconds, writer=write_seconds)
     return pd.DataFrame(records)
 
 
-def analyze(video):
+def analyze(video, *, device="cpu"):
+    start = perf_counter()
+    if device not in ("cpu", "mps"):
+        raise ValueError("cpu 또는 mps 중 하나를 선택하세요.")
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("이 실행 환경에서 MPS를 사용할 수 없습니다.")
     metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
     if video not in metadata.index:
         raise ValueError(f"등록된 검증 영상 ID를 입력하세요: {video}")
@@ -127,9 +146,12 @@ def analyze(video):
     events = load_events(ANNOTATIONS, video, pass_number=1)
     plate_weights = RUNS / "plate_baseline/weights/best.pt"
     pose_weights = (ROOT / "models/yolo26n-pose.pt").resolve(strict=True)
-    frames, candidates = detect_videos(plate_weights, [video])
+    configured = perf_counter()
+    frames, candidates = detect_videos(plate_weights, [video], device=device)
+    detected = perf_counter()
     selected = select_centers(frames, candidates, distance_ratio=0.5)
     plates = selected.loc[selected.method == "Past link"]
+    tracked = perf_counter()
     pose_model = YOLO(str(pose_weights))
     if pose_model.task != "pose":
         raise ValueError(f"자세 추정 가중치를 확인하세요: {pose_weights}")
@@ -142,7 +164,12 @@ def analyze(video):
         folder = Path(temp) / "result"
         folder.mkdir()
         overlay = folder / "overlay.mp4"
-        rows = render(VIDEOS / info.filename, plates, info, fps, pose_model, lift, knee, overlay, events)
+        timings = {"setup": configured - start, "plate_pass": detected - configured,
+                   "plate_tracking": tracked - detected}
+        rows = render(VIDEOS / info.filename, plates, info, fps, pose_model, lift, knee, overlay,
+                      events, device=device, timings=timings)
+        rendered = perf_counter()
+        timings["render_other"] = rendered - tracked - sum(timings[k] for k in ("pose", "drawing", "writer"))
         check = cv2.VideoCapture(str(overlay))
         try:
             if not check.isOpened() or int(check.get(cv2.CAP_PROP_FRAME_COUNT)) != len(rows):
@@ -155,8 +182,17 @@ def analyze(video):
                    "overlay_fps": fps, "near_side": info.near_side,
                    "plate_weights": str(plate_weights), "pose_weights": str(pose_weights),
                    "coaching": coaching_summary(rows, lift, knee, events, FACING.get(video)),
-                   "device": "cpu", "manual_phase_interval": phase_summary(rows, lift, knee)}
+                   "device": device, "manual_phase_interval": phase_summary(rows, lift, knee)}
+        endpoint_angles = rows.set_index("frame_index").loc[[lift, knee], "trunk_angle_deg"]
+        summary["trunk_change_deg"] = (float(endpoint_angles.loc[knee] - endpoint_angles.loc[lift])
+                                       if endpoint_angles.notna().all() else None)
         (folder / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+        saved = perf_counter()
+        timings["verify_and_save"] = saved - rendered
+        elapsed = saved - start
+        timing = {"pipeline_seconds": elapsed, "frames_per_second": len(rows) / elapsed,
+                  "stage_seconds": timings}
+        (folder / "timing.json").write_text(json.dumps(timing, indent=2) + "\n")
         folder.rename(destination)
     return destination, summary
 
@@ -164,7 +200,9 @@ def analyze(video):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("video_id", help="검증 영상 ID (예: c04_sn_f_01)")
-    output, summary = analyze(parser.parse_args().video_id)
+    parser.add_argument("--device", choices=("cpu", "mps"), default="cpu", help="원판·자세 추론 장치")
+    args = parser.parse_args()
+    output, summary = analyze(args.video_id, device=args.device)
     interval = summary["manual_phase_interval"]
     print(f"전체 {summary['frame_count']}프레임 · {summary['plate_counts']}")
     if interval["rise_px"] is None:
