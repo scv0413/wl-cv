@@ -9,3 +9,7 @@
 !wlcv/data/__init__.py
 !wlcv/data/mp4_input.py
 !wlcv/data/frames.py
+!deploy/gpu/Dockerfile
+!deploy/gpu/requirements.txt
+!deploy/gpu/*.py
+!deploy/gpu/release.json

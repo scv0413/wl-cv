@@ -43,6 +43,7 @@ class AnalysisResult(BaseModel):
     plate_mode: Mode
     plate_counts: dict[str, int]
     selected_model_counts: dict[str, int]
+    inference_backends: dict[str, str]
     manual_events: dict[str, int]
     lift_to_knee_rise_px: float | None
     knee_to_contact_rise_px: float | None
@@ -74,6 +75,7 @@ def public_result(request, folder, summary):
         analysis_id=folder.name, frame_count=summary["frame_count"], near_side=summary["near_side"],
         facing=summary["facing"], plate_mode=summary["plate_mode"], plate_counts=counts,
         selected_model_counts=summary["selected_model_counts"], manual_events=summary["manual_events"],
+        inference_backends=summary.get("inference_backends", {}),
         lift_to_knee_rise_px=summary["manual_phase_interval"]["rise_px"],
         knee_to_contact_rise_px=rise["rise_px"], knee_to_contact_source=rise["source"],
         knee_to_contact_reason=rise["reason"], trunk_change_deg=summary["trunk_change_deg"],

@@ -26,6 +26,17 @@ def experiment_models():
 
 def file_models():
     """배포 경로를 지정하면 해당 폴더만 사용한다. 기존 설치의 경로도 지원한다."""
+    backend = os.environ.get("WL_API_BACKEND", "pytorch")
+    if backend == "tensorrt":
+        folder = local_path("WL_MODEL_DIR", "models") / "tensorrt"
+        return ModelPaths(
+            plate=folder / "plate_baseline.engine",
+            pose=folder / "yolo26n-pose.engine",
+            cutmix=folder / "plate_cutmix.engine",
+            cosine=folder / "plate_cosine.engine",
+        )
+    if backend != "pytorch":
+        raise ValueError("WL_API_BACKEND는 pytorch 또는 tensorrt여야 합니다.")
     if not os.environ.get("WL_MODEL_DIR"):
         return experiment_models()
     folder = local_path("WL_MODEL_DIR", "models") / "pytorch"
