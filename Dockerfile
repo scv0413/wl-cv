@@ -15,6 +15,6 @@ COPY wlcv/runtime/*.py ./wlcv/runtime/
 COPY wlcv/data/__init__.py wlcv/data/mp4_input.py wlcv/data/frames.py ./wlcv/data/
 ENV PATH="/app/.venv/bin:$PATH" \
     WL_MODEL_DIR=/models WL_OUTPUT_DIR=/results WL_API_DEVICE=cpu WL_VIDEO_DECODER=pyav \
-    MPLBACKEND=Agg YOLO_OFFLINE=true YOLO_AUTOINSTALL=false
+    PYAV_LOGGING=off MPLBACKEND=Agg YOLO_OFFLINE=true YOLO_AUTOINSTALL=false
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "wlcv.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

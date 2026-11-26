@@ -45,6 +45,8 @@ def pyav_frames_rgb(path: str | Path) -> Iterator[tuple[float, np.ndarray]]:
     try:
         with av.open(str(path)) as video:
             stream = video.streams.video[0]
+            # 스트림 하나를 순서대로 읽는다. 모델 추론 중 디코더 작업 스레드를 유지하지 않는다.
+            stream.codec_context.thread_count = 1
             start = float((stream.start_time or 0) * stream.time_base)
             for frame in video.decode(stream):
                 if frame.time is None:
