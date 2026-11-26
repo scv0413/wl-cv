@@ -16,9 +16,10 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 from wlcv.annotation.storage import load_events
+from wlcv.evaluation.plate_endpoint_rise import check_endpoint, detect_endpoint, select_rise
 from wlcv.evaluation.phase_speed import vertical_speeds
 from wlcv.evaluation.catch_offset import FACING
-from wlcv.config import ANNOTATIONS, CUTMIX_WEIGHTS, ROOT, RUNS, VIDEOS
+from wlcv.config import ANNOTATIONS, COSINE_WEIGHTS, CUTMIX_WEIGHTS, ROOT, RUNS, VIDEOS
 from wlcv.data.frames import timed_frames_rgb
 from wlcv.data.mp4_input import EVENT_KEYS, inspect_mp4, validate_events
 from wlcv.evaluation.full_video import load_plate_model, validation_plate_model
@@ -94,7 +95,7 @@ def two_pass_frames(path, plates, pose_model, device, timings):
         yield time_ms, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), plate, result
 
 
-def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, timings):
+def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, timings, *, endpoint_images=None):
     writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"avc1"), fps,
                              (int(info.width + info.width % 2), int(info.height + info.height % 2)))
     if not writer.isOpened():
@@ -111,6 +112,8 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
                 tqdm(frame_stream, total=info.frame_count, desc="자세와 오버레이", unit="장")):
             if index != plate.frame_index or image.shape[:2] != (info.height, info.width):
                 raise ValueError(f"{index}번 원본의 크기 또는 프레임 번호를 확인하세요.")
+            if endpoint_images is not None and index in endpoint_images:
+                endpoint_images[index] = image.copy()  # 그리기 전 BGR 원본 두 장만 보존한다.
             drawing = perf_counter()
             pose = draw_pose(image, result, info.near_side)
             draw_plate(image, plate, trail)
@@ -235,7 +238,13 @@ def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, pl
             stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared",
                                         timings, plate_imgsz=plate_imgsz, cutmix_model=cutmix_model,
                                         edge_rule="continuity")
-        rows = render_frames(stream, info, fps, lift, knee, overlay, events, timings)
+        contact = events.get("drive")
+        has_pair = knee is not None and contact is not None
+        if has_pair and knee >= contact:
+            raise ValueError("무릎 통과가 접촉보다 먼저여야 합니다.")
+        endpoint_images = {knee: None, contact: None} if has_pair and COSINE_WEIGHTS.is_file() else {}
+        rows = render_frames(stream, info, fps, lift, knee, overlay, events, timings,
+                             endpoint_images=endpoint_images)
         rendered = perf_counter()
         timings["render_other"] = rendered - start - sum(timings.values())
         check = cv2.VideoCapture(str(overlay))
@@ -246,6 +255,25 @@ def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, pl
             check.release()
         if file_input:
             validate_events(events, len(rows))
+        measurement = {"knee_pass_frame": knee, "contact_frame": contact, "source": None, "rise_px": None,
+                       "endpoints": [], "cosine_weights": None, "reason": "무릎 통과 또는 접촉 시점 미지정"}
+        measurement_start = perf_counter()
+        if has_pair:
+            cosine = detector(COSINE_WEIGHTS) if endpoint_images else None
+            selected = rows.set_index("frame_index")
+            for index in (knee, contact):
+                tracked = selected.loc[index]
+                candidate = (detect_endpoint(cosine, endpoint_images[index], video, index, device)
+                             if cosine is not None else None)
+                track_box = tracked[["plate_x1", "plate_y1", "plate_x2", "plate_y2"]].to_numpy(float)
+                point = check_endpoint(index, track_box, tracked.plate_cy_px, tracked.selected_model,
+                                       candidate, model_loaded=cosine is not None)
+                measurement["endpoints"].append(point)
+            source, rise = select_rise(measurement["endpoints"])
+            reasons = [f"{p['frame_index']}번 {p['reason']}" for p in measurement["endpoints"] if p["reason"]]
+            measurement.update(source=source, rise_px=rise, reason=" · ".join(reasons),
+                               cosine_weights=str(COSINE_WEIGHTS) if cosine is not None else None)
+        timings["cosine_measurement"] = perf_counter() - measurement_start if has_pair else 0.0
         rows["forward_px"] = (rows.plate_cx_px - rows.shoulder_x_px) * (direction or np.nan)
         rows.to_csv(folder / "frames.csv", index=False)
         counts = {name: int(rows.plate_status.eq(name).sum()) for name, _, _ in PLATE_STATES.values()}
@@ -256,6 +284,7 @@ def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, pl
                    "manual_events": {k: v for k, v in {"lift_off": lift, "knee_pass": knee,
                                      **{k: events.get(k) for k in ("drive", "catch", "finish")}}.items()
                                      if v is not None},
+                   "knee_to_contact_rise": measurement,
                    "plate_mode": plate_mode, "overlay_seconds": rendered - video_start,
                    "selected_model_counts": {name: int(rows.selected_model.eq(name).sum())
                                              for name in ("baseline", "cutmix", "none")},
@@ -271,7 +300,7 @@ def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, pl
             summary["coaching"]["catch_to_finish"] = save_recovery_curve(rows, events, folder)
         (folder / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         saved = perf_counter()
-        timings["verify_and_save"] = saved - rendered
+        timings["verify_and_save"] = saved - rendered - timings["cosine_measurement"]
         elapsed = saved - start
         timing = {"pipeline_seconds": elapsed, "frames_per_second": len(rows) / elapsed,
                   "stage_seconds": timings}
@@ -333,10 +362,16 @@ def main():
     interval = summary["manual_phase_interval"]
     print(f"전체 {summary['frame_count']}프레임 · {summary['plate_counts']}")
     if interval["rise_px"] is None:
-        print("상승량 계산 보류 ·", interval.get("reason") or f"원판 미탐 프레임 {interval['missing_endpoint_frames']}")
+        print("이륙→무릎 통과 상승량 보류 ·", interval.get("reason") or f"원판 미탐 프레임 {interval['missing_endpoint_frames']}")
     else:
         print(f"수동 이륙 {interval['lift_off_frame']} → 무릎 통과 {interval['knee_pass_frame']}: "
               f"원판 중심 {interval['rise_px']:+.2f} px (위쪽이 +)")
+    measurement = summary["knee_to_contact_rise"]
+    if measurement["rise_px"] is None:
+        print("무릎 통과→접촉 상승량 보류 ·", measurement["reason"])
+    else:
+        source = "코사인 직접 검출" if measurement["source"] == "cosine" else "기존 추적 좌표"
+        print(f"무릎 통과→접촉 상승량 {measurement['rise_px']:+.2f} px · {source}", measurement["reason"])
     pulls = summary["coaching"]["pulls"]
     if pulls.get("ratio") is not None:
         print(f"이륙→무릎 {pulls['early']:.2f} px/s · 무릎→접촉 {pulls['late']:.2f} px/s · 앞/뒤 {pulls['ratio']:.3f}")

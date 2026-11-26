@@ -23,3 +23,17 @@ def test_manual_finish_must_be_inside_decoded_frames():
         validate_events({"finish": 3}, frame_count=3)
     with pytest.raises(ValueError, match="순서"):
         validate_events({"lift_off": 3, "finish": 2})
+
+
+def test_endpoint_iou_rejection_uses_both_tracking_centers():
+    import numpy as np
+    from wlcv.evaluation.plate_endpoint_rise import check_endpoint, select_rise
+
+    box = np.array([0., 0., 20., 20.])
+    cosine = pd.Series({"x1": 0., "y1": 2., "x2": 20., "y2": 22., "cy": 12.})
+    knee = check_endpoint(1, box, 10., "baseline", cosine)
+    contact = check_endpoint(2, box + 100., 110., "cutmix", cosine)
+    assert knee["accepted"] and not contact["accepted"]
+    assert select_rise([knee, contact]) == ("tracking", -100.)
+    missing = check_endpoint(2, np.full(4, np.nan), np.nan, "none", cosine)
+    assert select_rise([knee, missing]) == (None, None)
