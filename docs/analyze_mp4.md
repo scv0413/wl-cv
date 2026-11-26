@@ -2,6 +2,41 @@
 
 측면에서 고정한 영상에서 원판과 가까운 쪽 관절을 추적한다. 준비부터 일어선 자세까지 발끝·손끝·원판 테두리 전체가 보이는 영상을 사용한다. 분석에는 원판 베이스라인 가중치, 원본 YOLO26n-pose와 ffprobe가 필요하다. Mac에서 ffprobe는 `brew install ffmpeg`로 설치할 수 있다.
 
+## 실행 코드와 배포 모델
+
+새 MP4의 진입점은 `wlcv.runtime.pipeline.analyze_file`이다. CLI에서도 같은 함수를 호출한다. 반환값은 결과 폴더와 요약 딕셔너리다.
+
+```python
+from wlcv.runtime.pipeline import analyze_file
+
+folder, summary = analyze_file(
+    "my lift.mp4", near_side="left", facing="left",
+    manual_events={"lift_off": 11, "knee_pass": 27},
+)
+print(summary["manual_phase_interval"]["rise_px"])
+```
+
+| 위치 | 역할 |
+| --- | --- |
+| `wlcv/data/` | MP4 검사와 원본 프레임 디코딩 |
+| `wlcv/runtime/inference.py`, `tracking.py` | 원판·자세 추론, 원판 선택과 시간 연결 |
+| `wlcv/runtime/pose.py`, `measurements.py` | 관절 좌표 판독, 두 시점 상승량과 구간 지표 계산 |
+| `wlcv/runtime/overlay.py`, `recovery.py` | 오버레이 영상과 캐치→피니시 그래프 저장 |
+| `wlcv/evaluation/` | 등록 영상의 선수 분할 검사, 수동 정답과의 비교, 기존 실험의 import 경로 |
+
+프로젝트 루트에서 아래 파일을 준비하고 `.env`에 `WL_MODEL_DIR=models`를 지정한다. 원본 체크포인트는 실험 폴더에 보존한다.
+
+| 로컬 원본 | `models/pytorch/`에 복사할 파일명 | 사용 시점 |
+| --- | --- | --- |
+| `outputs/runs/plate_baseline/weights/best.pt` | `plate_baseline.pt` | 항상 |
+| `models/yolo26n-pose.pt` | `yolo26n-pose.pt` | 항상 |
+| `outputs/plate_cutmix_3090/20261126/runs/cutmix/weights/best.pt` | `plate_cutmix.pt` | CutMix 모드 |
+| `outputs/plate_lr_grid/20261126/runs/lr0005_cosine/weights/best.pt` | `plate_cosine.pt` | 무릎 통과·접촉이 모두 지정된 경우 |
+
+`WL_MODEL_DIR`를 지정하면 새 MP4는 이 폴더의 모델을 읽는다. 코사인 파일이 없으면 기존 추적 중심으로 상승량을 계산하고 사유를 남긴다. 변수를 비워 두면 기존 설치의 가중치 경로를 사용한다. 등록 영상 ID는 학습 선수 명단과 가중치를 같이 검사하기 위해 기존 실행 폴더를 사용한다. `WL_OUTPUT_DIR`는 새 MP4의 결과 폴더이고 기본값은 `outputs/file_analysis`다. 상대 경로는 프로젝트 루트 기준이다.
+
+RTX 3090에서 검증한 원판 엔진은 `models/tensorrt/`에 보관할 수 있다. 현재 추론 장치는 PyTorch CPU·MPS다.
+
 ## 시점 없이 실행
 
 프로젝트 루트에서 입력 파일 경로와 두 방향을 지정한다. 공백이 있는 파일 경로는 따옴표로 감싼다.
@@ -23,7 +58,7 @@ uv run --frozen --env-file .env python -m wlcv.analyze data/raw/videos/c04_sn_f_
   --lift-off 11 --knee-pass 27 --drive 43 --catch 78 --finish 107
 ```
 
-실행마다 `outputs/file_analysis/<실행 시각>/` 아래에 `overlay.mp4`, `frames.csv`, `summary.json`, `timing.json`을 저장한다. 캐치·피니시 구간에 거리나 체간 관측이 있으면 `catch_to_finish.png`도 저장한다. 그래프는 원본 프레임 번호, CSV는 원본 표시 시각(ms)을 사용한다. 오버레이는 일정한 FPS로 저장한다. 촬영 FPS가 가변인 영상의 시간 측정은 CSV를 사용한다. 화면 밖으로 잘린 원판의 박스 중점은 실제 허브 위치와 다를 수 있다.
+기본 설정에서는 실행마다 `outputs/file_analysis/<실행 시각>/` 아래에 `overlay.mp4`, `frames.csv`, `summary.json`, `timing.json`을 저장한다. 캐치·피니시 구간에 거리나 체간 관측이 있으면 `catch_to_finish.png`도 저장한다. 그래프는 원본 프레임 번호, CSV는 원본 표시 시각(ms)을 사용한다. 오버레이는 일정한 FPS로 저장한다. 촬영 FPS가 가변인 영상의 시간 측정은 CSV를 사용한다. 화면 밖으로 잘린 원판의 박스 중점은 실제 허브 위치와 다를 수 있다.
 
 파일 입력은 같은 이름의 등록 영상이 있어도 라벨이나 선수 분할표를 참조하지 않는다. 기존 ID 입력은 등록된 수동 시점과 사람별 검증 분할 검사를 그대로 사용한다.
 
@@ -57,7 +92,7 @@ c04와 a03 원본을 등록표에 없는 이름으로 열었다. 두 방향은 �
 
 `summary.json`의 `knee_to_contact_rise`에 위쪽을 양수로 한 `rise_px`, 두 프레임 번호, 출처(`source`)와 시점별 판정(`endpoints`)이 들어 있다. 출처는 `cosine`, `tracking`, 측정 보류 시 `null`이다. 각 시점의 추적 모델, 수직 좌표, 박스 간 IoU와 보류 사유도 확인할 수 있다. 오버레이·프레임 CSV·속도 비율은 영상 전체를 따라간 추적 좌표를 사용한다.
 
-기본 코사인 가중치는 `outputs/plate_lr_grid/20261126/runs/lr0005_cosine/weights/best.pt`다. 다른 위치에 저장했다면 환경변수 `WL_COSINE_WEIGHTS`에 경로를 지정한다. 가중치 파일이 없으면 기존 추적 좌표로 계산하고 사유를 남긴다. 무릎 통과 또는 접촉을 지정하지 않은 파일에서는 코사인 가중치를 열지 않는다.
+기존 실험 경로를 사용할 때 코사인 가중치는 `outputs/plate_lr_grid/20261126/runs/lr0005_cosine/weights/best.pt`다. 다른 위치에 저장했다면 환경변수 `WL_COSINE_WEIGHTS`에 경로를 지정한다. 가중치 파일이 없으면 기존 추적 좌표로 계산하고 사유를 남긴다. 무릎 통과 또는 접촉을 지정하지 않은 파일에서는 코사인 가중치를 열지 않는다.
 
 ### 검증 6편에서 재현한 결과
 
