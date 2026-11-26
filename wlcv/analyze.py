@@ -18,11 +18,10 @@ from ultralytics import YOLO
 from wlcv.annotation.storage import load_events
 from wlcv.evaluation.phase_speed import vertical_speeds
 from wlcv.evaluation.catch_offset import FACING
-from wlcv.config import ANNOTATIONS, ROOT, RUNS, VIDEOS
+from wlcv.config import ANNOTATIONS, CUTMIX_WEIGHTS, ROOT, RUNS, VIDEOS
 from wlcv.data.frames import timed_frames_rgb
-from wlcv.evaluation.full_video import detect_videos, validation_plate_model
-from wlcv.evaluation.single_pass import single_pass_frames
-from wlcv.evaluation.plate_track import select_centers
+from wlcv.evaluation.full_video import validation_plate_model
+from wlcv.evaluation.single_pass import single_pass_frames, tracked_plate_frames
 from wlcv.evaluation.plots import predict_rgb
 from wlcv.evaluation.video_overlay import PLATE_STATES, draw_caption, draw_plate, draw_pose
 
@@ -124,6 +123,8 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
                 "plate_x1": plate.x1, "plate_y1": plate.y1,
                 "plate_x2": plate.x2, "plate_y2": plate.y2, **pose,
             })
+            if hasattr(plate, "selected_model"):
+                records[-1]["selected_model"] = plate.selected_model
     finally:
         started = perf_counter()
         writer.release()  # 인코더에 남은 프레임과 MP4 컨테이너를 마무리한다.
@@ -143,8 +144,10 @@ def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events
     return render_frames(stream, info, fps, lift, knee, output, phase_events, timings)
 
 
-def analyze(video, *, device="cpu", read_mode="two-pass", plate_imgsz=640):
+def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, plate_mode="single"):
     start = perf_counter()
+    if plate_mode not in ("single", "cutmix"):
+        raise ValueError("원판 분석 모드는 single 또는 cutmix입니다.")
     if read_mode not in ("two-pass", "single-pass", "single-shared"):
         raise ValueError("지원하지 않는 영상 읽기 방식입니다.")
     if plate_imgsz <= 0 or plate_imgsz % 32:
@@ -171,23 +174,12 @@ def analyze(video, *, device="cpu", read_mode="two-pass", plate_imgsz=640):
     configured = perf_counter()
     timings = {"setup": configured - start, "pose": 0.0}
     path = VIDEOS / info.filename
-    if read_mode == "two-pass":
-        frames, candidates = detect_videos(plate_weights, [video], device=device, imgsz=plate_imgsz)
-        detected = perf_counter()
-        selected = select_centers(frames, candidates, distance_ratio=0.5)
-        plates = selected.loc[selected.method == "Past link"]
-        timings.update(plate_pass=detected-configured, plate_tracking=perf_counter()-detected)
-    else:
-        plate_model = validation_plate_model(plate_weights, [video])
-        timings.update(plate_load=perf_counter()-configured, plate_inference=0.0, plate_tracking=0.0)
+    plate_model = validation_plate_model(plate_weights, [video])
+    cutmix_model = validation_plate_model(CUTMIX_WEIGHTS, [video]) if plate_mode == "cutmix" else None
+    timings.update(plate_load=perf_counter()-configured, plate_inference=0.0, plate_tracking=0.0)
     pose_model = YOLO(str(pose_weights))
     if pose_model.task != "pose":
         raise ValueError(f"자세 추정 가중치를 확인하세요: {pose_weights}")
-    if read_mode == "two-pass":
-        stream = two_pass_frames(path, plates, pose_model, device, timings)
-    else:
-        stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared", timings,
-                                    plate_imgsz=plate_imgsz)
 
     parent = ROOT / "outputs/video_analysis" / video
     parent.mkdir(parents=True, exist_ok=True)
@@ -197,6 +189,19 @@ def analyze(video, *, device="cpu", read_mode="two-pass", plate_imgsz=640):
         folder = Path(temp) / "result"
         folder.mkdir()
         overlay = folder / "overlay.mp4"
+        video_start = perf_counter()
+        if read_mode == "two-pass":
+            observations = tracked_plate_frames(path, plate_model, device, timings,
+                                                cutmix_model=cutmix_model, plate_imgsz=plate_imgsz)
+            plates = pd.DataFrame.from_records(vars(plate) for _, _, plate in observations)
+            # 기존 두 번 읽기 시간표의 plate_pass에는 모델 준비·읽기·추론이 들어간다.
+            timings["plate_pass"] = timings.pop("plate_load") + perf_counter() - video_start - timings["plate_tracking"]
+            del timings["plate_inference"]
+            stream = two_pass_frames(path, plates, pose_model, device, timings)
+        else:
+            stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared",
+                                        timings, plate_imgsz=plate_imgsz, cutmix_model=cutmix_model,
+                                        edge_rule="continuity")
         rows = render_frames(stream, info, fps, lift, knee, overlay, events, timings)
         rendered = perf_counter()
         timings["render_other"] = rendered - start - sum(timings.values())
@@ -210,6 +215,10 @@ def analyze(video, *, device="cpu", read_mode="two-pass", plate_imgsz=640):
         counts = {name: int(rows.plate_status.eq(name).sum()) for name, _, _ in PLATE_STATES.values()}
         summary = {"video_id": video, "frame_count": len(rows), "plate_counts": counts,
                    "overlay_fps": fps, "near_side": info.near_side,
+                   "plate_mode": plate_mode, "overlay_seconds": rendered - video_start,
+                   "selected_model_counts": {name: int(rows.selected_model.eq(name).sum())
+                                             for name in ("baseline", "cutmix", "none")},
+                   "cutmix_weights": str(CUTMIX_WEIGHTS) if cutmix_model is not None else None,
                    "plate_weights": str(plate_weights), "pose_weights": str(pose_weights),
                    "coaching": coaching_summary(rows, lift, knee, events, FACING.get(video)),
                    "plate_imgsz": plate_imgsz, "pose_imgsz": 640,
@@ -233,10 +242,13 @@ def main():
     parser.add_argument("video_id", help="검증 영상 ID (예: c04_sn_f_01)")
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu", help="원판·자세 추론 장치")
     parser.add_argument("--read-mode", choices=("two-pass", "single-pass", "single-shared"),
-                        default="two-pass", help="원본 읽기 횟수와 모델 전처리 공유 여부")
+                        default="single-pass", help="원본 읽기 횟수와 모델 전처리 공유 여부")
     parser.add_argument("--plate-imgsz", type=int, default=640, help="원판 모델 입력 긴 변 (자세는 640)")
+    parser.add_argument("--plate-mode", choices=("single", "cutmix"), default="single",
+                        help="원판 베이스라인 단독 또는 빈 출력을 CutMix로 보완")
     args = parser.parse_args()
-    output, summary = analyze(args.video_id, device=args.device, read_mode=args.read_mode, plate_imgsz=args.plate_imgsz)
+    output, summary = analyze(args.video_id, device=args.device, read_mode=args.read_mode,
+                              plate_imgsz=args.plate_imgsz, plate_mode=args.plate_mode)
     interval = summary["manual_phase_interval"]
     print(f"전체 {summary['frame_count']}프레임 · {summary['plate_counts']}")
     if interval["rise_px"] is None:

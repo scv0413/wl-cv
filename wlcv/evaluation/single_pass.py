@@ -9,7 +9,7 @@ from ultralytics.models.yolo.detect import DetectionPredictor
 from ultralytics.models.yolo.pose import PosePredictor
 
 from wlcv.data.frames import timed_frames_rgb
-from wlcv.evaluation.plate_track import BOX, PlateHistory, prepare_candidates
+from wlcv.evaluation.plate_track import BOX, PlateHistory, choose_plate
 
 
 class PlateInput(DetectionPredictor):
@@ -35,29 +35,49 @@ def shared_pose_predictor(plate_model):
     return PoseWithPlateInput
 
 
-def single_pass_frames(path, plate_model, pose_model, device, share_input, timings, *, plate_imgsz=640):
-    history = PlateHistory()
-    options = dict(device=device, verbose=False)
-    plate_predictor = PlateInput if share_input else None
-    pose_predictor = shared_pose_predictor(plate_model) if share_input else None
+def tracked_plate_frames(path, plate_model, device, timings, *, cutmix_model=None,
+                         plate_imgsz=640, share_input=False, edge_rule="continuity"):
+    """두 모델이 각자의 이력을 갱신한다. 주 모델이 비어 있을 때만 보조 박스를 선택한다."""
+    models = [("baseline", plate_model)]
+    if cutmix_model is not None:
+        models.append(("cutmix", cutmix_model))
+    histories = {name: PlateHistory() for name, _ in models}
     for index, (time_ms, rgb) in enumerate(timed_frames_rgb(path)):
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        start = perf_counter()
-        plate_result, = plate_model.predict(bgr, conf=.001, imgsz=plate_imgsz, predictor=plate_predictor, **options)
-        boxes = plate_result.boxes.cpu()
-        detected = perf_counter()
-        # 일괄 처리와 같은 정렬·반경·이력 규칙을 현재 프레임 후보에 적용한다.
-        candidates = pd.DataFrame(boxes.xyxy.tolist(), columns=BOX)
-        candidates["confidence"] = boxes.conf.tolist()
-        candidates["video_id"] = path.stem
-        candidates["frame_index"] = index
-        _, chosen, source = history.choose(prepare_candidates(candidates), path.stem, index)
+        height, width = bgr.shape[:2]
+        chosen, source, selected_model = None, "missing", "none"
+        for name, model in models:
+            start = perf_counter()
+            predictor = PlateInput if share_input and name == "baseline" else None
+            result, = model.predict(bgr, conf=.001, imgsz=plate_imgsz, device=device,
+                                    verbose=False, predictor=predictor)
+            boxes = result.boxes.cpu()
+            detected = perf_counter()
+            candidates = pd.DataFrame(boxes.xyxy.tolist(), columns=BOX)
+            candidates["confidence"] = boxes.conf.tolist()
+            candidates["video_id"] = path.stem
+            candidates["frame_index"] = index
+            candidate, origin = choose_plate(histories[name], candidates, path.stem, index,
+                                             width, height, edge_rule)
+            if chosen is None and candidate is not None:
+                chosen, source, selected_model = candidate, origin, name
+            timings["plate_inference"] += detected - start
+            timings["plate_tracking"] += perf_counter() - detected
         values = {k: np.nan if chosen is None else chosen[k] for k in ["confidence", "cx", "cy", *BOX]}
-        plate = SimpleNamespace(video_id=path.stem, frame_index=index, source=source, **values)
-        tracked = perf_counter()
-        pose_result, = pose_model.predict(bgr, conf=.25, imgsz=640, predictor=pose_predictor, **options)
+        plate = SimpleNamespace(video_id=path.stem, frame_index=index, source=source,
+                                selected_model=selected_model, **values)
+        yield time_ms, bgr, plate
+
+
+def single_pass_frames(path, plate_model, pose_model, device, share_input, timings, *,
+                       plate_imgsz=640, cutmix_model=None, edge_rule="off"):
+    pose_predictor = shared_pose_predictor(plate_model) if share_input else None
+    plates = tracked_plate_frames(path, plate_model, device, timings, cutmix_model=cutmix_model,
+                                  plate_imgsz=plate_imgsz, share_input=share_input, edge_rule=edge_rule)
+    for time_ms, bgr, plate in plates:
+        start = perf_counter()
+        pose_result, = pose_model.predict(bgr, conf=.25, imgsz=640, device=device,
+                                          predictor=pose_predictor, verbose=False)
         result = pose_result.cpu().numpy()
-        timings["plate_inference"] += detected - start
-        timings["plate_tracking"] += tracked - detected
-        timings["pose"] += perf_counter() - tracked
+        timings["pose"] += perf_counter() - start
         yield time_ms, bgr, plate, result

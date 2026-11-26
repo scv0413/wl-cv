@@ -97,6 +97,26 @@ class PlateHistory:
         return high, chosen, source
 
 
+def choose_plate(history, candidates, video, frame, width, height, rule):
+    """현재 후보를 거른 뒤에만 이력을 갱신한다. 원본 픽셀 좌표를 사용한다."""
+    now = prepare_candidates(candidates)
+    if rule not in ("off", "strict", "continuity"):
+        raise ValueError(rule)
+    if rule != "off" and not now.empty:
+        bw, bh = now.x2 - now.x1, now.y2 - now.y1
+        edge = (now.x1 <= 1) | (now.y1 <= 1) | (width-now.x2 <= 1) | (height-now.y2 <= 1)
+        blocked = edge & (bh > 0) & (bw >= 3 * bh)
+        if (rule == "continuity" and blocked.any() and history.history
+                and history.last_high is not None and frame - history.last_high <= 2):
+            x, y = expected_center(history.history, frame)
+            _, previous = history.history[-1]
+            radius = (previous.x2 - previous.x1) * 0.5
+            blocked &= np.hypot(now.cx - x, now.cy - y) > radius
+        now = now.loc[~blocked]
+    _, box, source = history.choose(now, video, frame, distance_ratio=0.5)
+    return box, source
+
+
 def select_centers(frames, candidates, *, distance_ratio=0.5, checks=None,
                    gate_high_history=False, high_checks=None, history_checks=None, show_progress=True):
     """정답 좌표·IoU 없이 후보를 선택한다. 두 방법의 고신뢰 선택은 같다."""

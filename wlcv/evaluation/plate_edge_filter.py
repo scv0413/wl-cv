@@ -2,7 +2,7 @@
 import pandas as pd
 
 from wlcv.annotation.storage import EVENTS, load_events
-from wlcv.config import ANNOTATIONS, DATASET, ROOT, RUNS, VIDEOS
+from wlcv.config import ANNOTATIONS, CUTMIX_WEIGHTS, DATASET, ROOT, RUNS, VIDEOS
 from wlcv.data.frames import read_rgb
 from wlcv.evaluation.full_video import compare_videos, predict_plate_videos, validation_plate_model
 from wlcv.evaluation.plate_cutmix_fallback import fill_missing_boxes
@@ -13,7 +13,7 @@ OUTPUT = ROOT / "outputs/plate_edge_filter"
 BACKGROUNDS = ["b05_sn_f_01", "b06_sn_f_01"]
 WEIGHTS = {
     "mac": RUNS / "plate_baseline/weights/best.pt",
-    "cutmix": ROOT / "outputs/plate_cutmix_3090/20261126/runs/cutmix/weights/best.pt",
+    "cutmix": CUTMIX_WEIGHTS,
 }
 
 

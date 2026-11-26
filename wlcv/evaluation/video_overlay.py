@@ -61,6 +61,8 @@ def draw_caption(image, plate, pose, phase):
     _, label, color = PLATE_STATES[plate.source]
     score = "" if plate.source == "missing" else f"  {plate.confidence:.3f}"
     lines = [(f"Frame {plate.frame_index}   Plate {label}{score}", color)]
+    if hasattr(plate, "selected_model"):
+        lines.append((f"Plate model: {plate.selected_model.upper()}", color))
     if pose["person_candidates"] == 1:
         detail = f"{pose['pose_side']}   {pose['joints_drawn']}/4 joints"
     else:
@@ -68,7 +70,13 @@ def draw_caption(image, plate, pose, phase):
     lines.append((f"Pose: {detail}", POSE_COLOR))
     if phase:
         lines.append((f"Manual: {phase}", (255, 255, 255)))
-    cv2.rectangle(image, (12, 12), (min(image.shape[1]-1, 690), 25 + 42*len(lines)), (24, 24, 24), -1)
+    right = min(image.shape[1] - 1, 690)
+    height = 13 + 42 * len(lines)
+    top = 12
+    if (plate.source != "missing" and plate.x1 < right and plate.x2 > 12
+            and plate.y1 < top + height and plate.y2 > top):
+        top = max(12, image.shape[0] - height - 12)
+    cv2.rectangle(image, (12, top), (right, top + height), (24, 24, 24), -1)
     for number, (message, color) in enumerate(lines, start=1):
-        cv2.putText(image, message, (24, 12 + 42*number), cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(image, message, (24, top + 42*number), cv2.FONT_HERSHEY_SIMPLEX,
                     1.05, color, 2, cv2.LINE_AA)
