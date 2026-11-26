@@ -1,6 +1,8 @@
 """합성 MP4 한 편을 FastAPI에 제출하고 다운로드한 오버레이·CSV를 실제로 읽는다."""
 import argparse
 import csv
+import hashlib
+import shutil
 import json
 import subprocess
 from pathlib import Path
@@ -47,10 +49,14 @@ def read_overlay(source, overlay):
     return count
 
 
-def verify(url, output, cpu_check=False):
+def verify(url, output, cpu_check=False, input_video=None):
     output.mkdir(parents=True, exist_ok=False)
     source = output / "synthetic.mp4"
-    generate_video(source)
+    if input_video is None:
+        generate_video(source)
+    else:
+        shutil.copyfile(input_video, source)
+    input_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
     start = perf_counter()
     with source.open("rb") as fp:
         response = requests.post(url + "/analyses", files={"video": (source.name, fp, "video/mp4")},
@@ -78,7 +84,7 @@ def verify(url, output, cpu_check=False):
         raise ValueError("프레임별 검출·자세 CSV를 확인하세요.")
     count = read_overlay(source, output / "overlay.mp4")
     report = dict(check="cpu-api" if cpu_check else "tensorrt-api", analysis_id=info["analysis_id"],
-                  http_status=response.status_code, http_seconds=round(seconds, 3), backends=engines,
+                  input_sha256=input_sha256, http_status=response.status_code, http_seconds=round(seconds, 3), backends=engines,
                   overlay_frames=count, csv_rows=len(rows), selected_models=info["selected_model_counts"])
     (output / "response.json").write_text(json.dumps(info, ensure_ascii=False, indent=2))
     (output / "verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
@@ -90,5 +96,6 @@ if __name__ == "__main__":
     parser.add_argument("output", type=Path, help="이번 실행을 저장할 새 폴더")
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--cpu-check", action="store_true", help="Mac에서 HTTP와 출력 파일만 비교할 때 사용")
+    parser.add_argument("--input", type=Path, help="기존 검증에 사용한 합성 MP4 원본")
     args = parser.parse_args()
-    verify(args.url.rstrip("/"), args.output, args.cpu_check)
+    verify(args.url.rstrip("/"), args.output, args.cpu_check, args.input)
