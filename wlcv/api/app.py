@@ -11,6 +11,7 @@ from fastapi import FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParameter
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from pydantic.json_schema import SkipJsonSchema
 
 from wlcv.config import local_path
 from wlcv.data.mp4_input import VideoInputError
@@ -70,14 +71,18 @@ def public_result(request, folder, summary):
     )
 
 
-@app.post("/analyses", status_code=201, summary="MP4 한 편 분석")
+@app.post(
+    "/analyses", status_code=201, summary="MP4 한 편 분석",
+    description="베이스라인이 직접 검출과 시간 연결로도 원판을 찾지 못한 프레임만 CutMix로 자동 보완합니다.",
+)
 def create_analysis(
     request: Request,
     response: Response,
     video: UploadFile,
     near_side: Annotated[Side, Form(description="카메라에 가까운 쪽. 선수의 왼쪽 또는 오른쪽")],
     facing: Annotated[Side, Form(description="선수가 향한 쪽. 화면의 왼쪽 또는 오른쪽")],
-    plate_mode: Annotated[Mode, Form()] = "single",
+    # 예전 비교 스크립트의 명시적 모드는 지원하고, 업로드 화면은 자동 보완을 쓴다.
+    plate_mode: Annotated[SkipJsonSchema[Mode], Form()] = "cutmix",
     lift_off: Frame = None,
     knee_pass: Frame = None,
     drive: Frame = None,
