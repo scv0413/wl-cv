@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!deploy/cpu/pyproject.toml
+!deploy/cpu/uv.lock
+!wlcv/__init__.py
+!wlcv/config.py
+!wlcv/api/*.py
+!wlcv/runtime/*.py
+!wlcv/data/__init__.py
+!wlcv/data/mp4_input.py
+!wlcv/data/frames.py

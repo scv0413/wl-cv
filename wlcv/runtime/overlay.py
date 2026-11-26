@@ -12,6 +12,7 @@ from wlcv.data.mp4_input import VideoInputError
 from wlcv.runtime.inference import predict_rgb
 from wlcv.runtime.measurements import vertical_angle
 from wlcv.runtime.pose import joint_table
+from wlcv.runtime.video_writer import open_h264_writer
 
 PLATE_STATES = {
     "high": ("직접 검출", "DIRECT", (95, 230, 100)),
@@ -100,10 +101,8 @@ def two_pass_frames(path, plates, pose_model, device, timings):
 
 
 def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, timings, *, endpoint_images=None):
-    writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"avc1"), fps,
-                             (int(info.width + info.width % 2), int(info.height + info.height % 2)))
-    if not writer.isOpened():
-        raise OSError("H.264 영상을 저장할 수 없습니다. OpenCV의 avc1 지원을 확인하세요.")
+    size = (int(info.width + info.width % 2), int(info.height + info.height % 2))
+    writer = open_h264_writer(output, fps, size)
     records = []
     draw_seconds = write_seconds = 0.0
     trail = deque(maxlen=12)
