@@ -1,0 +1,51 @@
+name: GPU 배포 이미지 빌드
+on:
+  workflow_dispatch:
+  push:
+    tags: ['gpu-build-*']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/wl-cv-gpu-api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: 비공개 패키지 확인
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(curl --silent --show-error --output "$RUNNER_TEMP/package.json" --write-out '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$GITHUB_API_URL/users/$GITHUB_REPOSITORY_OWNER/packages/container/wl-cv-gpu-api")
+          case "$status" in
+            200) jq -e '.visibility == "private"' "$RUNNER_TEMP/package.json" ;;
+            404) echo '새 GHCR 패키지는 비공개로 생성됩니다.' ;;
+            *) echo "패키지 조회 실패 (HTTP $status)"; exit 1 ;;
+          esac
+      - name: 빌드 공간 준비
+        run: |
+          # 일회용 Linux 러너의 모바일 SDK 설치 공간을 CUDA 이미지 빌드에 사용한다.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h /
+      - name: Linux AMD64 이미지 빌드 및 푸시
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --name gpu-builder --driver docker-container --use
+          docker buildx build --platform linux/amd64 --file deploy/gpu/Dockerfile \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$IMAGE:$GITHUB_SHA" --provenance=false --push \
+            --metadata-file "$RUNNER_TEMP/image.json" .
+          digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/image.json")
+          gh api "/users/$GITHUB_REPOSITORY_OWNER/packages/container/wl-cv-gpu-api" --jq .visibility | grep -Fx private
+          echo "$IMAGE@$digest" | tee -a "$GITHUB_STEP_SUMMARY"
