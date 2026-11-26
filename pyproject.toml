@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "측면 스내치 영상의 원판 탐지 실험"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "fastapi>=0.163.2",
     "filelock",
     "ipyevents",
     "ipywidgets",
@@ -15,15 +16,18 @@ dependencies = [
     "numpy",
     "opencv-python",
     "pandas",
+    "python-multipart>=0.0.34",
     "pyyaml",
     "torch",
     "tqdm",
     "ultralytics",
+    "uvicorn>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
     "fiftyone==1.22.1",
+    "httpx>=0.28.1",
     "jupyterlab",
     "pytest",
 ]

@@ -1,0 +1,2 @@
+video_id,person_id,split,frame_index,side,joint,status,reason,x_px,y_px
+c04_sn_f_01,c04,validation,27,left,무릎,estimated,occluded,620,1478

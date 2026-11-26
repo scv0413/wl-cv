@@ -15,7 +15,7 @@ from wlcv.data.plate_labels import label_frame
 
 def train_baseline(
     data_yaml: Path, *, device=DEVICE, name="plate_baseline", weights=WEIGHTS, split_csv=SPLIT,
-    trainer=None, settings=None,
+    trainer=None, settings=None, on_model_save=None,
 ) -> Path:
     """사전학습 YOLO26n을 학습하고 이번 실행의 결과 폴더를 반환한다."""
     # 빈 배경 라벨도 학습에 사용된다. 이번 실행에 들어간 영상과 사람을 보존한다.
@@ -33,6 +33,8 @@ def train_baseline(
 
         model.add_callback("on_train_start", start_progress)
         model.add_callback("on_train_epoch_end", lambda trainer: progress.update())
+        if on_model_save is not None:
+            model.add_callback("on_model_save", on_model_save)
         options = dict(settings or {})
         if trainer is not None:
             options["trainer"] = trainer

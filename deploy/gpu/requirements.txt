@@ -1,0 +1,13 @@
+torch==2.8.0
+torchvision==0.23.0
+tensorrt-cu12==10.13.3.9
+ultralytics==8.4.202
+fastapi==0.163.2
+uvicorn==0.54.0
+python-multipart==0.0.34
+opencv-python==4.14.0.94
+av==14.2.0
+numpy==2.2.6
+pandas==2.3.3
+matplotlib==3.10.8
+tqdm==4.67.1
