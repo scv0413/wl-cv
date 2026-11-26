@@ -51,8 +51,13 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
         raise ValueError("원판 입력 크기는 양의 32 배수여야 합니다.")
     if read_mode == "single-shared" and plate_imgsz != 640:
         raise ValueError("입력 텐서를 공유하려면 원판과 자세 크기가 모두 640이어야 합니다.")
-    if device not in ("cpu", "mps"):
-        raise ValueError("cpu 또는 mps 중 하나를 선택하세요.")
+    use_engines = weights.plate.suffix == ".engine"
+    if use_engines and device != "0":
+        raise ValueError("TensorRT 엔진에는 WL_API_DEVICE=0을 지정하세요.")
+    if device not in ("cpu", "mps", "0"):
+        raise ValueError("cpu, mps 또는 0(첫 번째 CUDA GPU)을 지정하세요.")
+    if device == "0" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA GPU를 사용할 수 없습니다.")
     if device == "mps" and not torch.backends.mps.is_available():
         raise RuntimeError("이 실행 환경에서 MPS를 사용할 수 없습니다.")
     configured = perf_counter()
@@ -60,7 +65,7 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
     plate_model = detector(weights.plate)
     cutmix_model = detector(weights.cutmix) if plate_mode == "cutmix" else None
     timings.update(plate_load=perf_counter()-configured, plate_inference=0.0, plate_tracking=0.0)
-    pose_model = YOLO(str(weights.pose.resolve(strict=True)))
+    pose_model = YOLO(str(weights.pose.resolve(strict=True)), task="pose" if use_engines else None)
     if pose_model.task != "pose":
         raise ValueError(f"자세 추정 가중치를 확인하세요: {weights.pose}")
 
@@ -126,6 +131,18 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
                    "coaching": coaching_summary(rows, lift, knee, events, direction),
                    "plate_imgsz": plate_imgsz, "pose_imgsz": 640,
                    "device": device, "read_mode": read_mode, "manual_phase_interval": phase_summary(rows, lift, knee)}
+        if use_engines:
+            active = {"baseline": plate_model, "pose": pose_model, "cutmix": cutmix_model, "cosine": cosine}
+            backends = {}
+            for name, model in active.items():
+                if model is None:
+                    continue
+                # predict를 실제 호출한 뒤에만 predictor가 존재한다.
+                runtime = model.predictor.model
+                if runtime.format != "engine" or runtime.device.type != "cuda":
+                    raise RuntimeError(f"{name} 모델이 CUDA TensorRT 엔진으로 실행되지 않았습니다.")
+                backends[name] = type(runtime.backend).__name__
+            summary["inference_backends"] = backends
         endpoint_angles = rows.set_index("frame_index").trunk_angle_deg.reindex([lift, knee])
         summary["trunk_change_deg"] = (float(endpoint_angles.loc[knee] - endpoint_angles.loc[lift])
                                        if endpoint_angles.notna().all() else None)

@@ -15,8 +15,17 @@ from wlcv.runtime.tracking import BOX, PlateHistory, choose_plate
 
 
 def load_plate_model(weights):
-    model = YOLO(str(Path(weights).resolve(strict=True)))
-    if model.names != {0: "plate"}:
+    path = Path(weights).resolve(strict=True)
+    model = YOLO(str(path), task="detect")
+    if path.suffix == ".engine":
+        # 엔진을 두 번 GPU에 올리지 않고 준비 단계에서 저장한 클래스 이름을 읽는다.
+        from ultralytics.nn.backends.base import BaseBackend
+
+        _, metadata = BaseBackend.engine_header(path)
+        names = {int(key): value for key, value in metadata.get("names", {}).items()}
+    else:
+        names = model.names
+    if names != {0: "plate"}:
         raise ValueError("원판 탐지 가중치가 필요합니다.")
     return model
 
