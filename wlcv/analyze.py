@@ -1,4 +1,4 @@
-"""저장된 두 모델로 검증 영상 한 편을 분석한다. 프레임 번호는 0부터 센다."""
+"""검증 영상 ID 또는 MP4 경로로 원판과 가까운 쪽 관절을 분석한다. 프레임 번호는 0부터 센다."""
 
 import argparse
 import json
@@ -20,7 +20,8 @@ from wlcv.evaluation.phase_speed import vertical_speeds
 from wlcv.evaluation.catch_offset import FACING
 from wlcv.config import ANNOTATIONS, CUTMIX_WEIGHTS, ROOT, RUNS, VIDEOS
 from wlcv.data.frames import timed_frames_rgb
-from wlcv.evaluation.full_video import validation_plate_model
+from wlcv.data.mp4_input import EVENT_KEYS, inspect_mp4, validate_events
+from wlcv.evaluation.full_video import load_plate_model, validation_plate_model
 from wlcv.evaluation.single_pass import single_pass_frames, tracked_plate_frames
 from wlcv.evaluation.plots import predict_rgb
 from wlcv.evaluation.video_overlay import PLATE_STATES, draw_caption, draw_plate, draw_pose
@@ -36,6 +37,9 @@ def read_phases(video):
 
 def phase_summary(records, lift, knee):
     """원본의 y는 아래로 증가하므로 이륙 y에서 무릎 통과 y를 뺀다."""
+    if lift is None or knee is None:
+        return {"lift_off_frame": lift, "knee_pass_frame": knee, "rise_px": None,
+                "missing_endpoint_frames": [], "reason": "이륙 또는 무릎 통과 시점 미지정"}
     interval = records.set_index("frame_index").loc[lift:knee]
     first, last = interval.loc[lift], interval.loc[knee]
     missing = [int(i) for i in [lift, knee] if pd.isna(interval.at[i, "plate_cy_px"])]
@@ -54,17 +58,17 @@ def coaching_summary(rows, lift, knee, events, facing):
     frames = rows.set_index("frame_index", verify_integrity=True)
     result = {"units": "source px, source-video seconds", "landmarks": "model plate box center and near shoulder"}
     contact = events.get("drive")
-    if contact in frames.index and lift < knee < contact:
+    if lift is not None and knee is not None and contact in frames.index and lift < knee < contact:
         endpoints = frames.loc[[lift, knee, contact]]
         values = vertical_speeds(endpoints.source_time_ms, endpoints.plate_cy_px)
         result["pulls"] = {k: (float(v) if np.isfinite(v) else None) for k, v in values.items() if k != "reason"}
         result["pulls"].update(reason=values["reason"], endpoint_frames=[int(lift), int(knee), int(contact)],
                                plate_states=endpoints.plate_status.tolist())
     else:
-        result["pulls"] = {"reason": "접촉 시점 미확인"}
+        result["pulls"] = {"early": None, "late": None, "ratio": None, "reason": "이륙·무릎 통과·접촉 중 미지정 시점이 있습니다."}
     catch = events.get("catch")
     if catch not in frames.index:
-        result["catch"] = {"reason": "캐치 시점 미확인"}
+        result["catch"] = {"forward_px": None, "up_px": None, "reason": "캐치 시점 미지정"}
         return result
     point = frames.loc[catch]
     info = {"frame": int(catch), "forward_px": None, "up_px": None}
@@ -92,19 +96,19 @@ def two_pass_frames(path, plates, pose_model, device, timings):
 
 def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, timings):
     writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"avc1"), fps,
-                             (int(info.width), int(info.height)))
+                             (int(info.width + info.width % 2), int(info.height + info.height % 2)))
     if not writer.isOpened():
         raise OSError("H.264 영상을 저장할 수 없습니다. OpenCV의 avc1 지원을 확인하세요.")
     records = []
     draw_seconds = write_seconds = 0.0
     trail = deque(maxlen=12)
     events = {lift: ("이륙", "lift-off"), knee: ("무릎 통과", "knee pass")}
-    for name, korean in [("drive", "접촉"), ("catch", "캐치")]:
+    for name, korean in [("drive", "접촉"), ("catch", "캐치"), ("finish", "피니시")]:
         if name in (phase_events or {}):
             events[phase_events[name]] = (korean, name)
     try:
         for index, (time_ms, image, plate, result) in enumerate(
-                tqdm(frame_stream, total=int(info.frame_count), desc="자세와 오버레이", unit="장")):
+                tqdm(frame_stream, total=info.frame_count, desc="자세와 오버레이", unit="장")):
             if index != plate.frame_index or image.shape[:2] != (info.height, info.width):
                 raise ValueError(f"{index}번 원본의 크기 또는 프레임 번호를 확인하세요.")
             drawing = perf_counter()
@@ -114,6 +118,9 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
             draw_caption(image, plate, pose, caption)
             drawn = perf_counter()
             draw_seconds += drawn - drawing
+            # H.264는 짝수 크기로 저장한다. 홀수 원본의 마지막 행·열도 보존한다.
+            if info.height % 2 or info.width % 2:
+                image = cv2.copyMakeBorder(image, 0, info.height % 2, 0, info.width % 2, cv2.BORDER_CONSTANT)
             writer.write(image)
             write_seconds += perf_counter() - drawn
             records.append({
@@ -129,7 +136,9 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
         started = perf_counter()
         writer.release()  # 인코더에 남은 프레임과 MP4 컨테이너를 마무리한다.
         write_seconds += perf_counter() - started
-    if len(records) != info.frame_count:
+    if not records:
+        raise ValueError("영상에서 디코딩한 프레임이 없습니다.")
+    if info.frame_count is not None and len(records) != info.frame_count:
         raise ValueError("원본 디코딩 장수와 등록된 프레임 수가 다릅니다.")
     timings.update(drawing=draw_seconds, writer=write_seconds)
     return pd.DataFrame(records)
@@ -144,7 +153,8 @@ def render(path, plates, info, fps, pose_model, lift, knee, output, phase_events
     return render_frames(stream, info, fps, lift, knee, output, phase_events, timings)
 
 
-def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, plate_mode="single"):
+def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, plate_mode="single",
+            near_side=None, facing=None, manual_events=None):
     start = perf_counter()
     if plate_mode not in ("single", "cutmix"):
         raise ValueError("원판 분석 모드는 single 또는 cutmix입니다.")
@@ -158,30 +168,53 @@ def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, pl
         raise ValueError("cpu 또는 mps 중 하나를 선택하세요.")
     if device == "mps" and not torch.backends.mps.is_available():
         raise RuntimeError("이 실행 환경에서 MPS를 사용할 수 없습니다.")
-    metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
-    if video not in metadata.index:
-        raise ValueError(f"등록된 검증 영상 ID를 입력하세요: {video}")
-    info = metadata.loc[video]
-    timing = pd.read_csv(ROOT / "data/metadata/video_timing.csv").set_index("video_id")
-    fps = float(timing.at[video, "fps_from_median_gap"])
-    lift, knee = read_phases(video)
-    if not 0 <= lift < knee < info.frame_count or info.near_side not in ("left", "right") or not fps > 0:
-        raise ValueError("수동 시점 순서, 가까운 쪽과 재생 fps를 확인하세요.")
+    path = Path(video).expanduser()
+    file_input = isinstance(video, Path) or bool(path.suffix) or "/" in str(video)
+    if file_input:
+        if near_side not in ("left", "right") or facing not in ("left", "right"):
+            raise ValueError("파일 입력에는 --near-side와 --facing을 각각 left 또는 right로 지정하세요.")
+        events = dict(manual_events or {})
+        validate_events(events)
+        info = inspect_mp4(path, near_side)
+        fps = info.fps
+        direction = {"left": -1, "right": 1}[facing]
+        lift, knee = events.get("lift_off"), events.get("knee_pass")
+        video = path.stem
+        parent = ROOT / "outputs/file_analysis"
+    else:
+        if near_side is not None or facing is not None or manual_events:
+            raise ValueError("방향·시점을 직접 지정하려면 영상 ID 대신 MP4 경로를 입력하세요.")
+        metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
+        if video not in metadata.index:
+            raise ValueError(f"등록된 검증 영상 ID 또는 MP4 경로를 입력하세요: {video}")
+        info = metadata.loc[video]
+        timing = pd.read_csv(ROOT / "data/metadata/video_timing.csv").set_index("video_id")
+        fps = float(timing.at[video, "fps_from_median_gap"])
+        lift, knee = read_phases(video)
+        if not 0 <= lift < knee < info.frame_count or info.near_side not in ("left", "right") or not fps > 0:
+            raise ValueError("수동 시점 순서, 가까운 쪽과 재생 fps를 확인하세요.")
+        events = load_events(ANNOTATIONS, video, pass_number=1)
+        direction = FACING.get(video)
+        path = VIDEOS / info.filename
+        parent = ROOT / "outputs/video_analysis" / video
 
-    events = load_events(ANNOTATIONS, video, pass_number=1)
     plate_weights = RUNS / "plate_baseline/weights/best.pt"
     pose_weights = (ROOT / "models/yolo26n-pose.pt").resolve(strict=True)
     configured = perf_counter()
     timings = {"setup": configured - start, "pose": 0.0}
-    path = VIDEOS / info.filename
-    plate_model = validation_plate_model(plate_weights, [video])
-    cutmix_model = validation_plate_model(CUTMIX_WEIGHTS, [video]) if plate_mode == "cutmix" else None
+    # 파일 추론에는 검증 선수 목록이 필요 없다. ID 평가는 기존 분할 검사를 유지한다.
+    def detector(weights):
+        if file_input:
+            return load_plate_model(weights)
+        return validation_plate_model(weights, [video])
+
+    plate_model = detector(plate_weights)
+    cutmix_model = detector(CUTMIX_WEIGHTS) if plate_mode == "cutmix" else None
     timings.update(plate_load=perf_counter()-configured, plate_inference=0.0, plate_tracking=0.0)
     pose_model = YOLO(str(pose_weights))
     if pose_model.task != "pose":
         raise ValueError(f"자세 추정 가중치를 확인하세요: {pose_weights}")
 
-    parent = ROOT / "outputs/video_analysis" / video
     parent.mkdir(parents=True, exist_ok=True)
     destination = parent / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     # 한 영상의 세 결과가 모두 준비되면 공개한다. 실패해도 지난 실행은 다시 열 수 있다.
@@ -211,21 +244,31 @@ def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, pl
                 raise OSError("오버레이와 프레임 기록 수가 일치하지 않습니다.")
         finally:
             check.release()
+        if file_input:
+            validate_events(events, len(rows))
+        rows["forward_px"] = (rows.plate_cx_px - rows.shoulder_x_px) * (direction or np.nan)
         rows.to_csv(folder / "frames.csv", index=False)
         counts = {name: int(rows.plate_status.eq(name).sum()) for name, _, _ in PLATE_STATES.values()}
         summary = {"video_id": video, "frame_count": len(rows), "plate_counts": counts,
                    "overlay_fps": fps, "near_side": info.near_side,
+                   "input_mode": "file" if file_input else "validation_id",
+                   "facing": {-1: "left", 1: "right"}.get(direction),
+                   "manual_events": {k: v for k, v in {"lift_off": lift, "knee_pass": knee,
+                                     **{k: events.get(k) for k in ("drive", "catch", "finish")}}.items()
+                                     if v is not None},
                    "plate_mode": plate_mode, "overlay_seconds": rendered - video_start,
                    "selected_model_counts": {name: int(rows.selected_model.eq(name).sum())
                                              for name in ("baseline", "cutmix", "none")},
                    "cutmix_weights": str(CUTMIX_WEIGHTS) if cutmix_model is not None else None,
                    "plate_weights": str(plate_weights), "pose_weights": str(pose_weights),
-                   "coaching": coaching_summary(rows, lift, knee, events, FACING.get(video)),
+                   "coaching": coaching_summary(rows, lift, knee, events, direction),
                    "plate_imgsz": plate_imgsz, "pose_imgsz": 640,
                    "device": device, "read_mode": read_mode, "manual_phase_interval": phase_summary(rows, lift, knee)}
-        endpoint_angles = rows.set_index("frame_index").loc[[lift, knee], "trunk_angle_deg"]
+        endpoint_angles = rows.set_index("frame_index").trunk_angle_deg.reindex([lift, knee])
         summary["trunk_change_deg"] = (float(endpoint_angles.loc[knee] - endpoint_angles.loc[lift])
                                        if endpoint_angles.notna().all() else None)
+        if file_input:
+            summary["coaching"]["catch_to_finish"] = save_recovery_curve(rows, events, folder)
         (folder / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         saved = perf_counter()
         timings["verify_and_save"] = saved - rendered
@@ -237,9 +280,42 @@ def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, pl
     return destination, summary
 
 
+def save_recovery_curve(rows, events, folder):
+    """수동 캐치·피니시가 있을 때만 해당 구간의 모델 관측을 표시한다."""
+    catch, finish = events.get("catch"), events.get("finish")
+    if catch is None or finish is None:
+        return {"reason": "캐치 또는 피니시 시점 미지정"}
+    interval = rows.set_index("frame_index").loc[catch:finish]
+    offsets = interval.forward_px.dropna()
+    angles = interval.trunk_angle_deg
+    result = {"catch_frame": catch, "finish_frame": finish, "distance_frames": len(offsets),
+              "angle_frames": int(angles.count()), "minimum_forward_frame": None, "minimum_forward_px": None,
+              "trunk_change_deg": None, "reason": ""}
+    if not offsets.empty:
+        result.update(minimum_forward_frame=int(offsets.idxmin()), minimum_forward_px=float(offsets.min()))
+    if pd.notna(angles.loc[catch]) and pd.notna(angles.loc[finish]):
+        result["trunk_change_deg"] = float(angles.loc[finish] - angles.loc[catch])
+    if offsets.empty and angles.isna().all():
+        result["reason"] = "구간 내 원판·어깨 거리와 체간 관측이 없습니다."
+        return result
+    import matplotlib.pyplot as plt
+    from wlcv.evaluation.catch_to_finish import plot_interval
+    figure = plot_interval(interval, title="Plate and pose", note="Model estimates in source pixels and degrees.")
+    try:
+        figure.savefig(folder / "catch_to_finish.png", dpi=145)
+    finally:
+        plt.close(figure)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("video_id", help="검증 영상 ID (예: c04_sn_f_01)")
+    parser.add_argument("source", help="검증 영상 ID 또는 로컬 MP4 파일 경로")
+    parser.add_argument("--near-side", choices=("left", "right"), help="카메라에 가까운 쪽 (선수의 좌우)")
+    parser.add_argument("--facing", choices=("left", "right"), help="선수가 보는 방향 (화면의 좌우)")
+    for key, help_text in zip(EVENT_KEYS, ("이륙", "무릎 통과", "접촉", "캐치", "피니시")):
+        parser.add_argument("--" + key.replace("_", "-"), type=int, metavar="FRAME",
+                            help=f"{help_text} 수동 시점 (0부터, 선택)")
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu", help="원판·자세 추론 장치")
     parser.add_argument("--read-mode", choices=("two-pass", "single-pass", "single-shared"),
                         default="single-pass", help="원본 읽기 횟수와 모델 전처리 공유 여부")
@@ -247,12 +323,17 @@ def main():
     parser.add_argument("--plate-mode", choices=("single", "cutmix"), default="single",
                         help="원판 베이스라인 단독 또는 빈 출력을 CutMix로 보완")
     args = parser.parse_args()
-    output, summary = analyze(args.video_id, device=args.device, read_mode=args.read_mode,
-                              plate_imgsz=args.plate_imgsz, plate_mode=args.plate_mode)
+    events = {key: getattr(args, key) for key in EVENT_KEYS if getattr(args, key) is not None}
+    try:
+        output, summary = analyze(args.source, device=args.device, read_mode=args.read_mode,
+                                  plate_imgsz=args.plate_imgsz, plate_mode=args.plate_mode,
+                                  near_side=args.near_side, facing=args.facing, manual_events=events)
+    except (ValueError, FileNotFoundError) as error:
+        parser.error(str(error))
     interval = summary["manual_phase_interval"]
     print(f"전체 {summary['frame_count']}프레임 · {summary['plate_counts']}")
     if interval["rise_px"] is None:
-        print(f"상승량 계산 보류 · 원판 미탐 프레임 {interval['missing_endpoint_frames']}")
+        print("상승량 계산 보류 ·", interval.get("reason") or f"원판 미탐 프레임 {interval['missing_endpoint_frames']}")
     else:
         print(f"수동 이륙 {interval['lift_off_frame']} → 무릎 통과 {interval['knee_pass_frame']}: "
               f"원판 중심 {interval['rise_px']:+.2f} px (위쪽이 +)")

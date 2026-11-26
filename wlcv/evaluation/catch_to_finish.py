@@ -48,9 +48,9 @@ def landmarks(rows):
     return sorted(set(frames))
 
 
-def plot_interval(rows):
+def plot_interval(rows, *, title="c04", note="Model estimates per frame. At catch, the manual shoulder and hip were both estimated."):
     fig, axes = plt.subplots(2, 1, sharex=True, figsize=(9.8, 6.0), layout="constrained")
-    fig.suptitle("c04    /    Catch to finish", fontweight="bold")
+    fig.suptitle(f"{title}    /    Catch to finish", fontweight="bold")
     guides = landmarks(rows)
     for ax, column, color, title, units in [
         (axes[0], "forward_px", "#006f69", "Plate relative to near shoulder   (+ forward / - behind)", "Distance (px)"),
@@ -73,7 +73,7 @@ def plot_interval(rows):
     ticks = sorted(set(range(rows.index[0], rows.index[-1] + 1, 5)) | set(guides))
     axes[-1].set_xticks(ticks)
     axes[-1].set_xlabel("Original frame (0-based)")
-    fig.supxlabel("Model estimates per frame. At catch, the manual shoulder and hip were both estimated.",
+    fig.supxlabel(note,
                   fontsize=9, color="0.3")
     return fig
 

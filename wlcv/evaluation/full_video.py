@@ -13,10 +13,15 @@ from wlcv.evaluation.plate_track import BOX, KEY, select_centers
 from wlcv.evaluation.plots import predict_rgb
 
 
-def validation_plate_model(weights, video_ids, split_csv=SPLIT):
+def load_plate_model(weights):
     model = YOLO(str(Path(weights).resolve(strict=True)))
     if model.names != {0: "plate"}:
         raise ValueError("원판 탐지 가중치가 필요합니다.")
+    return model
+
+
+def validation_plate_model(weights, video_ids, split_csv=SPLIT):
+    model = load_plate_model(weights)
     split = pd.read_csv(split_csv).set_index("video_id", verify_integrity=True)
     trained = set(pd.read_csv(weights.parent.parent / "train_people.csv").person_id)
     for video in video_ids:
