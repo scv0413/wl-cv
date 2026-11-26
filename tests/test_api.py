@@ -59,6 +59,36 @@ def test_saving_catch_graph_works_without_a_gui(tmp_path, monkeypatch):
     assert (tmp_path / "catch_to_finish.png").read_bytes().startswith(b"\x89PNG")
 
 
+def test_review_saved_frames_without_inference(tmp_path, monkeypatch):
+    monkeypatch.setenv("WL_OUTPUT_DIR", str(tmp_path))
+    folder = tmp_path / "api/20261126-123456-000001"
+    folder.mkdir(parents=True)
+    summary = {**sample_summary("cutmix"), "overlay_fps": 30}
+    (folder / "summary.json").write_text(json.dumps(summary))
+    csv = "frame_index,forward_px,trunk_angle_deg\n0,3,\n1,,\n2,,\n"
+    (folder / "frames.csv").write_text(csv)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            info = (await client.get(f"/analyses/{folder.name}")).json()
+            url = info["recovery_review_url"]
+            assert "캐치·피니시 판독" in (await client.get(url)).text
+            result = (await client.post(url, data={"catch": 0, "finish": 2})).raise_for_status().json()
+            assert result["manual_events"] == {}
+            assert result["catch_to_finish"]["distance_frames"] == 1
+            assert result["catch_to_finish"]["angle_frames"] == 0
+            chart = result["files"]["catch_to_finish.png"]
+            png = (await client.get(chart)).content
+            assert png.startswith(b"\x89PNG")
+            for start, end in [(1, 2), (2, 1), (0, 3)]:
+                assert (await client.post(url, data={"catch": start, "finish": end})).status_code == 422
+            assert (await client.get(chart)).content == png
+            assert (await client.get(info["summary_url"])).json() == result
+    asyncio.run(check())
+    assert (folder / "frames.csv").read_text() == csv
+    assert json.loads((folder / "summary.json").read_text()) == summary
+
+
 def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkeypatch):
     def fake_analysis(path, *, plate_mode, manual_events, **options):
         summary = sample_summary(plate_mode)
