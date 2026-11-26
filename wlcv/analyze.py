@@ -1,136 +1,76 @@
-"""저장된 두 모델로 검증 영상 한 편을 분석한다. 프레임 번호는 0부터 센다."""
-
+"""검증 영상 ID 또는 MP4 경로로 원판과 가까운 쪽 관절을 분석한다. 프레임 번호는 0부터 센다."""
 import argparse
-import json
-from collections import deque
-from datetime import datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
-import cv2
-import pandas as pd
-from tqdm import tqdm
-from ultralytics import YOLO
-
-from wlcv.config import ANNOTATIONS, ROOT, RUNS, VIDEOS
-from wlcv.data.frames import timed_frames_rgb
-from wlcv.evaluation.full_video import detect_videos
-from wlcv.evaluation.plate_track import select_centers
-from wlcv.evaluation.plots import predict_rgb
-from wlcv.evaluation.video_overlay import PLATE_STATES, draw_caption, draw_plate, draw_pose
+from wlcv.data.mp4_input import EVENT_KEYS
+from wlcv.runtime.measurements import coaching_summary as coaching_summary, phase_summary as phase_summary
+from wlcv.runtime.overlay import render as render, render_frames as render_frames, two_pass_frames as two_pass_frames
+from wlcv.runtime.pipeline import analyze_file
+from wlcv.runtime.recovery import save_recovery_curve as save_recovery_curve
 
 
 def read_phases(video):
-    file = ANNOTATIONS / "trunk_inclination" / "frames" / f"{video}.csv"
-    rows = pd.read_csv(file).to_dict("records")
-    if len(rows) != 1 or rows[0]["판독"] != "확인":
-        raise ValueError(f"확인된 이륙·무릎 통과 라벨 한 쌍이 필요합니다: {file}")
-    return int(rows[0]["이륙"]), int(rows[0]["무릎 통과"])
+    from wlcv.evaluation.registered_video import read_phases as read_registered_phases
+    return read_registered_phases(video)
 
 
-def phase_summary(records, lift, knee):
-    """원본의 y는 아래로 증가하므로 이륙 y에서 무릎 통과 y를 뺀다."""
-    interval = records.set_index("frame_index").loc[lift:knee]
-    first, last = interval.loc[lift], interval.loc[knee]
-    missing = [int(i) for i in [lift, knee] if pd.isna(interval.at[i, "plate_cy_px"])]
-    rise = None if missing else round(float(first.plate_cy_px - last.plate_cy_px), 3)
-    return {
-        "lift_off_frame": lift, "knee_pass_frame": knee,
-        "lift_off_y_px": None if lift in missing else float(first.plate_cy_px),
-        "knee_pass_y_px": None if knee in missing else float(last.plate_cy_px),
-        "rise_px": rise, "missing_endpoint_frames": missing,
-        "observed_frames": int(interval.plate_cy_px.count()), "interval_frames": len(interval),
-    }
-
-
-def render(path, plates, info, fps, pose_model, lift, knee, output):
-    writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"avc1"), fps,
-                             (int(info.width), int(info.height)))
-    if not writer.isOpened():
-        raise OSError("H.264 영상을 저장할 수 없습니다. OpenCV의 avc1 지원을 확인하세요.")
-    records = []
-    trail = deque(maxlen=12)
-    events = {lift: ("이륙", "lift-off"), knee: ("무릎 통과", "knee pass")}
-    try:
-        pairs = zip(timed_frames_rgb(path), plates.itertuples(index=False), strict=True)
-        for index, ((time_ms, rgb), plate) in enumerate(tqdm(pairs, total=len(plates), desc="자세와 오버레이", unit="장")):
-            if index != plate.frame_index or rgb.shape[:2] != (info.height, info.width):
-                raise ValueError(f"{index}번 원본의 크기 또는 프레임 번호를 확인하세요.")
-            result = predict_rgb(pose_model, rgb, conf=0.25, imgsz=640, device="cpu").cpu().numpy()
-            image = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-            pose = draw_pose(image, result, info.near_side)
-            draw_plate(image, plate, trail)
-            phase, caption = events.get(index, ("", ""))
-            draw_caption(image, plate, pose, caption)
-            writer.write(image)
-            records.append({
-                "video_id": plate.video_id, "frame_index": index, "source_time_ms": time_ms,
-                "manual_phase": phase, "plate_status": PLATE_STATES[plate.source][0],
-                "plate_confidence": plate.confidence, "plate_cx_px": plate.cx, "plate_cy_px": plate.cy,
-                **pose,
-            })
-    finally:
-        writer.release()
-    return pd.DataFrame(records)
-
-
-def analyze(video):
-    metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
-    if video not in metadata.index:
-        raise ValueError(f"등록된 검증 영상 ID를 입력하세요: {video}")
-    info = metadata.loc[video]
-    timing = pd.read_csv(ROOT / "data/metadata/video_timing.csv").set_index("video_id")
-    fps = float(timing.at[video, "fps_from_median_gap"])
-    lift, knee = read_phases(video)
-    if not 0 <= lift < knee < info.frame_count or info.near_side not in ("left", "right") or not fps > 0:
-        raise ValueError("수동 시점 순서, 가까운 쪽과 재생 fps를 확인하세요.")
-
-    plate_weights = RUNS / "plate_baseline/weights/best.pt"
-    pose_weights = (ROOT / "models/yolo26n-pose.pt").resolve(strict=True)
-    frames, candidates = detect_videos(plate_weights, [video])
-    selected = select_centers(frames, candidates, distance_ratio=0.5)
-    plates = selected.loc[selected.method == "Past link"]
-    pose_model = YOLO(str(pose_weights))
-    if pose_model.task != "pose":
-        raise ValueError(f"자세 추정 가중치를 확인하세요: {pose_weights}")
-
-    parent = ROOT / "outputs/video_analysis" / video
-    parent.mkdir(parents=True, exist_ok=True)
-    destination = parent / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    # 한 영상의 세 결과가 모두 준비되면 공개한다. 실패해도 지난 실행은 다시 열 수 있다.
-    with TemporaryDirectory(dir=parent) as temp:
-        folder = Path(temp) / "result"
-        folder.mkdir()
-        overlay = folder / "overlay.mp4"
-        rows = render(VIDEOS / info.filename, plates, info, fps, pose_model, lift, knee, overlay)
-        check = cv2.VideoCapture(str(overlay))
-        try:
-            if not check.isOpened() or int(check.get(cv2.CAP_PROP_FRAME_COUNT)) != len(rows):
-                raise OSError("오버레이와 프레임 기록 수가 일치하지 않습니다.")
-        finally:
-            check.release()
-        rows.to_csv(folder / "frames.csv", index=False)
-        counts = {name: int(rows.plate_status.eq(name).sum()) for name, _, _ in PLATE_STATES.values()}
-        summary = {"video_id": video, "frame_count": len(rows), "plate_counts": counts,
-                   "overlay_fps": fps, "near_side": info.near_side,
-                   "plate_weights": str(plate_weights), "pose_weights": str(pose_weights),
-                   "device": "cpu", "manual_phase_interval": phase_summary(rows, lift, knee)}
-        (folder / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
-        folder.rename(destination)
-    return destination, summary
+def analyze(video, *, device="cpu", read_mode="single-pass", plate_imgsz=640, plate_mode="single",
+            near_side=None, facing=None, manual_events=None):
+    """기존 CLI와 노트북에서 사용하던 파일 경로·검증 영상 ID를 모두 지원한다."""
+    options = dict(device=device, read_mode=read_mode, plate_imgsz=plate_imgsz, plate_mode=plate_mode)
+    if isinstance(video, Path) or Path(video).suffix or "/" in str(video):
+        return analyze_file(video, near_side=near_side, facing=facing, manual_events=manual_events, **options)
+    if near_side is not None or facing is not None or manual_events:
+        raise ValueError("방향·시점을 직접 지정하려면 영상 ID 대신 MP4 경로를 입력하세요.")
+    from wlcv.evaluation.registered_video import analyze_registered
+    return analyze_registered(video, **options)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("video_id", help="검증 영상 ID (예: c04_sn_f_01)")
-    output, summary = analyze(parser.parse_args().video_id)
+    parser.add_argument("source", help="검증 영상 ID 또는 로컬 MP4 파일 경로")
+    parser.add_argument("--near-side", choices=("left", "right"), help="카메라에 가까운 쪽 (선수의 좌우)")
+    parser.add_argument("--facing", choices=("left", "right"), help="선수가 보는 방향 (화면의 좌우)")
+    for key, help_text in zip(EVENT_KEYS, ("이륙", "무릎 통과", "접촉", "캐치", "피니시")):
+        parser.add_argument("--" + key.replace("_", "-"), type=int, metavar="FRAME",
+                            help=f"{help_text} 수동 시점 (0부터, 선택)")
+    parser.add_argument("--device", choices=("cpu", "mps"), default="cpu", help="원판·자세 추론 장치")
+    parser.add_argument("--read-mode", choices=("two-pass", "single-pass", "single-shared"),
+                        default="single-pass", help="원본 읽기 횟수와 모델 전처리 공유 여부")
+    parser.add_argument("--plate-imgsz", type=int, default=640, help="원판 모델 입력 긴 변 (자세는 640)")
+    parser.add_argument("--plate-mode", choices=("single", "cutmix"), default="single",
+                        help="원판 베이스라인 단독 또는 빈 출력을 CutMix로 보완")
+    args = parser.parse_args()
+    events = {key: getattr(args, key) for key in EVENT_KEYS if getattr(args, key) is not None}
+    try:
+        output, summary = analyze(args.source, device=args.device, read_mode=args.read_mode,
+                                  plate_imgsz=args.plate_imgsz, plate_mode=args.plate_mode,
+                                  near_side=args.near_side, facing=args.facing, manual_events=events)
+    except (ValueError, FileNotFoundError) as error:
+        parser.error(str(error))
     interval = summary["manual_phase_interval"]
     print(f"전체 {summary['frame_count']}프레임 · {summary['plate_counts']}")
     if interval["rise_px"] is None:
-        print(f"상승량 계산 보류 · 원판 미탐 프레임 {interval['missing_endpoint_frames']}")
+        print("이륙→무릎 통과 상승량 보류 ·", interval.get("reason") or f"원판 미탐 프레임 {interval['missing_endpoint_frames']}")
     else:
         print(f"수동 이륙 {interval['lift_off_frame']} → 무릎 통과 {interval['knee_pass_frame']}: "
               f"원판 중심 {interval['rise_px']:+.2f} px (위쪽이 +)")
+    measurement = summary["knee_to_contact_rise"]
+    if measurement["rise_px"] is None:
+        print("무릎 통과→접촉 상승량 보류 ·", measurement["reason"])
+    else:
+        source = "코사인 직접 검출" if measurement["source"] == "cosine" else "기존 추적 좌표"
+        print(f"무릎 통과→접촉 상승량 {measurement['rise_px']:+.2f} px · {source}", measurement["reason"])
+    pulls = summary["coaching"]["pulls"]
+    if pulls.get("ratio") is not None:
+        print(f"이륙→무릎 {pulls['early']:.2f} px/s · 무릎→접촉 {pulls['late']:.2f} px/s · 앞/뒤 {pulls['ratio']:.3f}")
+    else:
+        print("속도 비율 보류 ·", pulls["reason"])
+    catch = summary["coaching"]["catch"]
+    if catch.get("forward_px") is not None:
+        print(f"캐치 바−어깨 · 앞 {catch['forward_px']:+.2f} px · 위 {catch['up_px']:+.2f} px (모델)")
+    else:
+        print("캐치 위치 ·", catch["reason"])
     print(f"로컬 결과: {output}")
 
 

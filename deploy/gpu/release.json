@@ -1,0 +1,17 @@
+{
+  "baseline": {
+    "onnx_sha256": "c2af99c33963353ede46cb86968f4004ea4cd126e649155d2e46f6694610af16",
+    "raw_engine_sha256": "2158fda79f68a51dc071bda72146fd6282c275b7cfba831d942b65f6fc5a3401"
+  },
+  "cutmix": {
+    "onnx_sha256": "3ba25ae0f23a97d1a5895ca0645eac3ed69a497d333258490df097ca0cd05435",
+    "raw_engine_sha256": "3c0a21e304b9ea0e8b9f4a26308c2ceca4fe9c2f678364cd2202d679912db68b"
+  },
+  "cosine": {
+    "onnx_sha256": "35e0ea176dc7115a5e8a06f8403ca7fec33a7118f2b597cbb2db1bbc9f9f483d",
+    "raw_engine_sha256": "75d15c22a6b2057eeb39eb6392c19d41c97eadcc3a9e6e470ab2b6465b6e33fe"
+  },
+  "pose": {
+    "onnx_sha256": "4fd68572dc655267b0cade7132ffd3195153bdb6c6f48ccd1f5b69b2a54542a9"
+  }
+}

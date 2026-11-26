@@ -20,7 +20,8 @@ TRIAL = RUNS / "plate_200_patience50"
 SCHEDULE = {"epochs": 200, "patience": 50}
 
 
-def settings_for_trial():
+def baseline_settings():
+    """원본 베이스라인의 설정, 학습 가중치와 사람별 분할을 확인한다."""
     settings = yaml.safe_load((BASE / "args.yaml").read_text())
     weights = Path(settings["model"]).resolve(strict=True)
     data = Path(settings["data"]).resolve(strict=True)
@@ -46,7 +47,11 @@ def settings_for_trial():
     if (set(training.video_id) != used["train"] or len(set(people.loc[list(used["val"])])) != 6
             or set(training.person_id) & set(people.loc[list(used["val"])])):
         raise ValueError("기준 실행의 학습 선수와 검증 6명의 분할을 확인하세요.")
-    return {**settings, **SCHEDULE}
+    return settings
+
+
+def settings_for_trial():
+    return {**baseline_settings(), **SCHEDULE}
 
 
 def train_schedule():

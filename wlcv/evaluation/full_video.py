@@ -1,36 +1,45 @@
 """전체 영상을 처음부터 읽고, 정답과 독립적으로 두 방법의 원판 후보를 선택한다."""
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
-from ultralytics import YOLO
 
 from wlcv.annotation.storage import EVENTS, load_events
 from wlcv.config import ROOT, SPLIT, VIDEOS
 from wlcv.data.frames import frames_rgb
 from wlcv.evaluation.plate_track import BOX, KEY, select_centers
 from wlcv.evaluation.plots import predict_rgb
+from wlcv.runtime.inference import load_plate_model
 
 
-def detect_videos(weights, video_ids):
-    """신뢰도 0.001 이상의 후보를 보관한다. 후보가 없는 프레임도 프레임 표에 남긴다."""
-    model = YOLO(str(Path(weights).resolve(strict=True)))
-    if model.names != {0: "plate"}:
-        raise ValueError("원판 탐지 가중치가 필요합니다.")
-    split = pd.read_csv(SPLIT).set_index("video_id", verify_integrity=True)
+def validation_plate_model(weights, video_ids, split_csv=SPLIT):
+    model = load_plate_model(weights)
+    split = pd.read_csv(split_csv).set_index("video_id", verify_integrity=True)
     trained = set(pd.read_csv(weights.parent.parent / "train_people.csv").person_id)
-    metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
-    frames, candidates = [], []
     for video in video_ids:
         if split.at[video, "role"] != "validation" or split.at[video, "person_id"] in trained:
             raise ValueError(f"{video}의 학습·검증 분할을 확인하세요.")
+    return model
+
+
+def detect_videos(weights, video_ids, *, split_csv=SPLIT, device="cpu", imgsz=640):
+    """신뢰도 0.001 이상의 후보를 보관한다. 후보가 없는 프레임도 프레임 표에 남긴다."""
+    video_ids = list(video_ids)
+    model = validation_plate_model(weights, video_ids, split_csv)
+    return predict_plate_videos(model, video_ids, device=device, imgsz=imgsz)
+
+
+def predict_plate_videos(model, video_ids, *, device="cpu", imgsz=640):
+    """선택한 영상의 모든 프레임을 추론한다. 대상 분할은 호출자가 확인한다."""
+    metadata = pd.read_csv(ROOT / "data/metadata/videos.csv").set_index("video_id")
+    frames, candidates = [], []
+    for video in video_ids:
         expected = int(metadata.at[video, "frame_count"])
         decoded = 0
         for index, rgb in enumerate(tqdm(frames_rgb(VIDEOS / f"{video}.mp4"),
                                          total=expected, desc=video, unit="장")):
             frames.append((video, index))
-            boxes = predict_rgb(model, rgb, conf=0.001, imgsz=640, device="cpu").boxes.cpu()
+            boxes = predict_rgb(model, rgb, conf=0.001, imgsz=imgsz, device=device).boxes.cpu()
             for conf, coords in zip(boxes.conf.tolist(), boxes.xyxy.tolist()):
                 candidates.append((video, index, conf, *coords))
             decoded += 1

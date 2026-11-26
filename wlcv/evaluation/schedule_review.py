@@ -41,10 +41,15 @@ def review_inputs(data):
 def evaluate_run(run, data, output):
     weights = run / "weights/best.pt"
     model = YOLO(str(weights.resolve(strict=True)))
-    videos, boxes, hubs = review_inputs(data)
     metric = model.val(data=str(data), split="val", imgsz=640, batch=16, conf=0.001,
                        iou=0.7, max_det=300, device="cpu", workers=0, plots=False,
                        project=str(output), name=run.name)
+    return float(metric.box.map), evaluate_motion(weights, data)
+
+
+def evaluate_motion(weights, data):
+    """검증 원본 영상에서 직접 검출과 시간 연결 결과를 수동 박스·허브와 대조한다."""
+    videos, boxes, hubs = review_inputs(data)
     frames, candidates = detect_videos(weights, videos)
     review = frames.merge(boxes, on=KEY, how="left", validate="one_to_one")
     detail, _ = compare_videos(frames, candidates, review)
@@ -61,25 +66,30 @@ def evaluate_run(run, data, output):
     visible = detail.visibility.eq("visible")
     detail["dy_px"] = (detail.cy - detail.manual_y).where(visible)
     detail["error_px"] = np.hypot(detail.cx - detail.manual_x, detail.dy_px).where(visible)
-    return float(metric.box.map), detail
+    return detail
 
 
-def compare_runs(control, trial):
+def compare_runs(control, trial, *, labels=("100", "200"), motion_only=True):
     """같은 프레임·후처리에서 어느 모델이 정탐을 얻고 잃었는지 연결한다."""
     keys = KEY + ["method"]
     fixed = ["in_motion", "visibility", "gt_x1", "gt_y1", "gt_x2", "gt_y2", "manual_x", "manual_y"]
     measured = ["source", "confidence", "match", "iou", "error_px", "dy_px"] + BOX
+    first, second = labels
     left = control[keys + fixed + measured]
     pair = left.merge(trial[keys + measured], on=keys, validate="one_to_one",
-                      suffixes=("_100", "_200"), how="outer", indicator=True)
+                      suffixes=(f"_{first}", f"_{second}"), how="outer", indicator=True)
     if not pair.pop("_merge").eq("both").all():
         raise ValueError("두 실행의 프레임 목록을 확인하세요.")
-    valid = pair.in_motion & pair.match_100.notna() & pair.match_200.notna()
+    match_first = f"match_{first}"
+    match_second = f"match_{second}"
+    valid = pair[match_first].notna() & pair[match_second].notna()
+    if motion_only:
+        valid &= pair.in_motion
     result = pair.loc[valid].copy()
     result["change"] = "모두 미탐"
-    result.loc[result.match_100 & result.match_200, "change"] = "모두 정탐"
-    result.loc[~result.match_100 & result.match_200, "change"] = "복구"
-    result.loc[result.match_100 & ~result.match_200, "change"] = "손실"
+    result.loc[result[match_first] & result[match_second], "change"] = "모두 정탐"
+    result.loc[~result[match_first] & result[match_second], "change"] = "복구"
+    result.loc[result[match_first] & ~result[match_second], "change"] = "손실"
     return result
 
 
