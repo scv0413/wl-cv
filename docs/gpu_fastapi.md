@@ -66,3 +66,28 @@ python -m uvicorn wlcv.api.app:app --host 127.0.0.1 --port 8000
 기존 원판 엔진 3개를 다시 로드하고 자세 엔진은 해당 GPU에서 빌드했다. 엔진 검사에서 FP16 출력을 쓰는 층은 베이스라인 234개, CutMix 220개, 코사인 210개, 자세 229개였다. Linux OpenCV의 H.264 인코더 초기화가 실패한 뒤 기존 FFmpeg/libx264 대체 경로로 영상이 저장됐다.
 
 합성 패턴의 24프레임 모두에서 최종 원판 좌표는 베이스라인에서 선택됐다. 이 결과로 확인한 범위는 요청 처리, 네 엔진 호출, 결과물 저장과 다운로드다. 선수 원판의 실제 검출 정확도와 CutMix의 복구율은 선수 영상 검증 결과에서 판단한다.
+
+## 저장소 Dockerfile로 빌드한 이미지 검증
+
+비공개 GitHub Actions에서 `deploy/gpu/Dockerfile`을 Linux AMD64로 빌드했다. Community RTX 3090 Pod에 다음 다이제스트를 지정했고, 이미지의 기본 명령으로 FastAPI가 시작됐다. 네 TensorRT 엔진은 실행할 때 별도로 전달했다. [이미지 빌드 기록](https://github.com/scv0413/wl-cv/actions/runs/45820280308)
+
+```text
+ghcr.io/scv0413/wl-cv-gpu-api@sha256:d815f96d00f5f20ec15cf03ed5dab1de3c84e107ff7ad1e980ba7c8d105e3e2a
+```
+
+직전 RunPod PyTorch 컨테이너에서 사용한 합성 MP4와 네 엔진의 SHA-256을 대조했다. 두 번 모두 같은 영상에 무릎 통과 4번과 접촉 12번을 지정했다.
+
+| 확인 항목 | RunPod PyTorch 컨테이너 | 저장소 Dockerfile 이미지 |
+| --- | --- | --- |
+| 첫 분석 요청 | HTTP 201, 2.304초 | HTTP 201, 2.011초 |
+| 실제 추론 백엔드 | TensorRT 엔진 4개 | TensorRT 엔진 4개 |
+| 다운로드한 오버레이 | H.264, 384×640, 24프레임 | 같은 규격, Mac에서 24프레임 전체 디코딩 |
+| 다운로드한 프레임 CSV | 24행, 20열 | 프레임 번호 0~23, 기준 CSV와 바이트 단위 일치 |
+
+Pod 생성부터 Uvicorn 시작까지 약 7분 45초가 걸렸다. 여기에는 비공개 이미지 다운로드와 압축 해제가 포함된다. 표의 첫 요청 시간은 API가 기동한 뒤 영상을 보내 201 응답을 받기까지의 시간이다. 환경별로 한 번씩 측정해 처리 속도의 우열은 판단하지 않았다. 합성 패턴에서 실제 선수에 대한 정확도는 평가하지 않았다.
+
+같은 입력으로 재현하려면 API를 띄운 뒤 검증 클라이언트에 이전 합성 MP4 경로와 새 결과 폴더를 전달한다. 클라이언트는 전송한 파일의 SHA-256을 `verification.json`에 기록한다.
+
+```bash
+python deploy/gpu/smoke.py ./outputs/gpu_replay --input ./outputs/previous/synthetic.mp4
+```
