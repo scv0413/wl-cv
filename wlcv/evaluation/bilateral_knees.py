@@ -23,20 +23,25 @@ ROI = (140, 470, 290, 670)
 FOLDER = ANNOTATIONS / "a05_bilateral_knees" / "validation"
 
 
-def read_knees(folder):
+def read_knees(folder, *, video_id=VIDEO_ID, frames=FRAMES, roi=ROI, original_sources=None):
+    """기존 직접점은 지정된 원본 폴더에서만 읽고 새 판독과 섞어 쓰지 않는다."""
+    original_sources = original_sources or {}
     rows = []
-    for frame in FRAMES:
+    for frame in frames:
         for side, name in SIDES.items():
-            path = pose_point_path(folder / side, VIDEO_ID, frame)
+            source = original_sources.get((frame, side), folder / side)
+            path = pose_point_path(source, video_id, frame)
             point = load_points(path).get("무릎")
+            if (frame, side) in original_sources and (not point or point["status"] != "located"):
+                raise ValueError(f"{path.name}에서 기존 무릎 직접점을 확인하세요.")
             status, x, y = "미검수", np.nan, np.nan
             if point is not None:
                 keys = ("video_id", "frame_index", "person_id", "split", "side")
-                if tuple(point[k] for k in keys) != (VIDEO_ID, str(frame), "a05", "validation", side):
+                if tuple(point[k] for k in keys) != (video_id, str(frame), video_id.split("_")[0], "validation", side):
                     raise ValueError(f"{path.name}의 영상·프레임·선수·분할·좌우를 확인하세요.")
                 if point["status"] == "located":
                     status, x, y = "직접 확인", float(point["x_px"]), float(point["y_px"])
-                    if not (ROI[0] <= x < ROI[2] and ROI[1] <= y < ROI[3]):
+                    if not (roi[0] <= x < roi[2] and roi[1] <= y < roi[3]):
                         raise ValueError(f"{frame}번 {name} 무릎 좌표가 판독 영역 밖에 있습니다.")
                 elif point["status"] == "unreadable" and not (point["x_px"] or point["y_px"]):
                     status = "판독 불가"
@@ -71,11 +76,11 @@ def compare_pair(rows):
             "판정": verdict}
 
 
-def evaluate(model, video, manual):
+def evaluate(model, video, manual, *, frames=FRAMES):
     if manual["판독"].eq("미검수").any():
-        raise ValueError("두 프레임의 왼쪽·오른쪽 판독을 모두 저장하세요.")
+        raise ValueError("대상 프레임의 왼쪽·오른쪽 판독을 모두 저장하세요.")
     coordinates, scores = [], []
-    for frame in tqdm(FRAMES, desc="양쪽 무릎 비교", unit="장"):
+    for frame in tqdm(frames, desc="양쪽 무릎 비교", unit="장"):
         rgb = read_rgb(video, frame)
         result = predict_rgb(model, rgb, conf=PERSON_CONF, imgsz=640, device="cpu").cpu().numpy()
         count = len(result.boxes)
@@ -96,11 +101,11 @@ def evaluate(model, video, manual):
     return pd.concat(coordinates, ignore_index=True), pd.DataFrame(scores)
 
 
-def draw_assignments(video, coordinates, scores):
+def draw_assignments(video, coordinates, scores, *, frames=FRAMES, roi=ROI):
     """한 프레임에 두 패널을 써서 동일한 네 점의 연결만 바꾸어 보여 준다."""
-    fig, axes = plt.subplots(len(FRAMES), 2, figsize=(8, 7), layout="constrained")
+    fig, axes = plt.subplots(len(frames), 2, figsize=(8, 3.5 * len(frames)), squeeze=False, layout="constrained")
     colors = {"왼쪽": "#28d7fd", "오른쪽": "#ffbf32"}
-    for index, frame in enumerate(FRAMES):
+    for index, frame in enumerate(frames):
         points = coordinates[coordinates["프레임"] == frame].set_index("방향")
         score = scores.set_index("프레임").loc[frame]
         rgb = read_rgb(video, frame)
@@ -120,8 +125,8 @@ def draw_assignments(video, coordinates, scores):
             # 비교에 쓰인 점이 판독 영역 밖에 있어도 그림 안에 함께 담는다.
             xs = points[["수동 x", "예측 x"]].stack()
             ys = points[["수동 y", "예측 y"]].stack()
-            ax.set_xlim(max(0, min(ROI[0], xs.min()-10)), min(rgb.shape[1], max(ROI[2], xs.max()+10)))
-            ax.set_ylim(min(rgb.shape[0], max(ROI[3], ys.max()+10)), max(0, min(ROI[1], ys.min()-10)))
+            ax.set_xlim(max(0, min(roi[0], xs.min()-10)), min(rgb.shape[1], max(roi[2], xs.max()+10)))
+            ax.set_ylim(min(rgb.shape[0], max(roi[3], ys.max()+10)), max(0, min(roi[1], ys.min()-10)))
             total = score[field]
             value = f"{total:.1f} px" if pd.notna(total) else "unavailable"
             ax.set_title(f"#{frame} | {name} | {value}", fontsize=10)

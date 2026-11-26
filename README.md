@@ -80,6 +80,7 @@ JSON의 `coaching.pulls`에는 앞·뒤 구간의 속도(px/s), 앞/뒤 비율�
 | 머리 위에서 팔이 가려진 두 장의 수행자 박스 재판독과 동일 예측 IoU 비교 | [보이는 수행자 박스 다시 그리기](notebooks/annotation/10_visible_performer_boxes.ipynb) |
 | a05 30·41·60번의 오른쪽 무릎·발목 수동점과 YOLO의 좌우 예측 거리 비교 | [a05 좌우 관절 판독](notebooks/annotation/11_a05_pose_side_review.ipynb) |
 | a05 84·87번 양쪽 무릎을 직접 판독하고 같은 쪽·교차 연결 거리 비교 | [양쪽 무릎 좌우 대응](notebooks/annotation/12_a05_bilateral_knees.ipynb) |
+| c04·c08 캐치에서 양쪽 무릎이 각각 반대쪽 예측에 더 가까운지 확인 | [캐치 무릎 좌우 판독](notebooks/annotation/13_catch_knee_sides.ipynb) |
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 | 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |
