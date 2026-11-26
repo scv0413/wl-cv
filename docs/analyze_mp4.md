@@ -35,7 +35,7 @@ print(summary["manual_phase_interval"]["rise_px"])
 
 `WL_MODEL_DIR`를 지정하면 새 MP4는 이 폴더의 모델을 읽는다. 코사인 파일이 없으면 기존 추적 중심으로 상승량을 계산하고 사유를 남긴다. 변수를 비워 두면 기존 설치의 가중치 경로를 사용한다. 등록 영상 ID는 학습 선수 명단과 가중치를 같이 검사하기 위해 기존 실행 폴더를 사용한다. `WL_OUTPUT_DIR`는 새 MP4의 결과 폴더이고 기본값은 `outputs/file_analysis`다. 상대 경로는 프로젝트 루트 기준이다.
 
-RTX 3090에서 검증한 원판 엔진은 `models/tensorrt/`에 보관할 수 있다. 현재 추론 장치는 PyTorch CPU·MPS다.
+기본 PyTorch 경로는 CPU·Mac MPS에서 실행한다. NVIDIA 배포에서는 `WL_API_BACKEND=tensorrt`로 설정하고 네 모델의 FP16 엔진을 `models/tensorrt/`에서 읽는다. 엔진 준비와 합성 영상 검증은 [GPU 배포 안내](gpu_fastapi.md)를 따른다.
 
 ## 시점 없이 실행
 
