@@ -25,6 +25,7 @@ dependencies = [
 ]
 
 [dependency-groups]
+tracking = ["wandb>=0.31.2"]
 dev = [
     "fiftyone==1.22.1",
     "httpx>=0.28.1",

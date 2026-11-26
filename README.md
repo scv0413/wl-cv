@@ -81,6 +81,7 @@ JSON의 `coaching.pulls`에는 앞·뒤 구간의 속도(px/s), 앞/뒤 비율�
 | a05 30·41·60번의 오른쪽 무릎·발목 수동점과 YOLO의 좌우 예측 거리 비교 | [a05 좌우 관절 판독](notebooks/annotation/11_a05_pose_side_review.ipynb) |
 | a05 84·87번 양쪽 무릎을 직접 판독하고 같은 쪽·교차 연결 거리 비교 | [양쪽 무릎 좌우 대응](notebooks/annotation/12_a05_bilateral_knees.ipynb) |
 | c04·c08 캐치에서 양쪽 무릎이 각각 반대쪽 예측에 더 가까운지 확인 | [캐치 무릎 좌우 판독](notebooks/annotation/13_catch_knee_sides.ipynb) |
+| b02 34·35·36번 원판 허브를 예측 없이 찍기 | [노트북 열기](notebooks/annotation/14_b02_hub_centers.ipynb) |
 | 한 프레임의 정답·예측 비교, 기본값 학습, FiftyOne에서 검증셋 검수 | [YOLO26n 실험](notebooks/experiments/01_plate_baseline.ipynb) |
 | 학습에 쓰지 않은 사람의 원판 없는 영상 전체에서 오탐 세기 | [원판 없는 영상의 오탐 평가](notebooks/experiments/02_false_positives.ipynb) |
 | 사람별 데이터 분포, 학습 곡선, 신뢰도 비교, 중심 오차와 가림 실험 | [원판 탐지 보고서](notebooks/experiments/03_plate_report.ipynb) |
@@ -112,6 +113,7 @@ JSON의 `coaching.pulls`에는 앞·뒤 구간의 속도(px/s), 앞/뒤 비율�
 | 세 수행자 박스·무릎·발목을 YOLO 라벨로 변환하고 Mac에서 1 epoch 학습 | [자세 추정 시험 학습](notebooks/experiments/29_pose_smoke.ipynb) |
 | 자세 학습 5장·검증 5장으로 첫 파인튜닝, 수행자 미탐과 다리 관절 오차 전후 비교 (a05 별도) | [무릎·발목 첫 파인튜닝](notebooks/experiments/30_pose_first_finetune.ipynb) |
 | b02에서 시간 연결 전후 원판 궤적, 35번 복구와 97·98번 실패를 나란히 비교 | [시간 연결 복구와 실패](notebooks/experiments/31_b02_link_replay.ipynb) |
+| 기존 100에폭과 최대 200에폭·patience 50을 같은 검증 프레임에서 비교 | [노트북 열기](notebooks/experiments/32_plate_training_schedule.ipynb) |
 
 ### 학습 결과를 보고서 그림으로 만들기
 
