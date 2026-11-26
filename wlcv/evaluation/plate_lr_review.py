@@ -1,4 +1,4 @@
-"""네 조건을 같은 Mac CPU로 채점하고 한 설정만 다른 조건끼리 차이를 구한다."""
+"""각 조건을 같은 Mac CPU로 채점하고 한 설정만 다른 조건끼리 차이를 구한다."""
 import argparse
 import json
 from pathlib import Path
@@ -12,7 +12,7 @@ from wlcv.evaluation.full_video import summarize_phase_false_positives
 from wlcv.evaluation.plate_patience_review import CONTROL, measure
 from wlcv.evaluation.schedule_review import evaluate_run
 from wlcv.training.plate_cutmix import check_same_labels
-from wlcv.training.plate_lr_grid import CASES
+from wlcv.training.plate_lr_grid import CASES, LOW_LR_CASES
 
 
 def save_false_positives(frames, review):
@@ -24,20 +24,25 @@ def save_false_positives(frames, review):
     pd.concat(tables, ignore_index=True).to_csv(review / "false_positives.csv", index=False)
 
 
-def compare(experiment):
-    review = experiment / "review"
+def compare(experiment, low_lr_experiment=None):
+    """추가 실험이 있으면 이전 가중치도 재채점해 새 실험 폴더에만 기록한다."""
+    review = (low_lr_experiment or experiment) / "review"
     review.mkdir(parents=True, exist_ok=True)
     original = yaml.safe_load((CONTROL / "args.yaml").read_text())
     expected_changes = {"name", "save_dir", "optimizer", "momentum", "warmup_bias_lr", "lr0", "cos_lr"}
     runs = {"reference": CONTROL}
     runs.update({name: experiment / "runs" / name for name in CASES})
+    settings = CASES.copy()
+    if low_lr_experiment is not None:
+        settings.update(LOW_LR_CASES)
+        runs.update({name: low_lr_experiment / "runs" / name for name in LOW_LR_CASES})
     athletes, scores, selections = [], [], []
     reference_frames = None
     for name, run in runs.items():
-        if name in CASES:
+        if name in settings:
             args = yaml.safe_load((run / "args.yaml").read_text())
             changes = {key for key in original.keys() | args.keys() if original.get(key) != args.get(key)}
-            if changes - expected_changes or (args["lr0"], args["cos_lr"]) != CASES[name]:
+            if changes - expected_changes or (args["lr0"], args["cos_lr"]) != settings[name]:
                 raise ValueError(f"{name}의 고정 조건이 달라졌습니다: {changes}")
             audit = json.loads((run / "audit.json").read_text())
             if audit["initial_lr"] != args["lr0"] or audit["betas"] != [0.9, 0.999]:
@@ -62,6 +67,9 @@ def compare(experiment):
     summary = summary.join(pd.DataFrame(scores).set_index("case"))
     pairs = [("lr001_linear", "lr001_cosine"), ("lr0005_linear", "lr0005_cosine"),
              ("lr001_linear", "lr0005_linear"), ("lr001_cosine", "lr0005_cosine")]
+    if low_lr_experiment is not None:
+        pairs.extend([("lr0005_linear", "lr0001_linear"), ("lr0005_cosine", "lr0001_cosine"),
+                      ("lr0001_linear", "lr0001_cosine")])
     contrasts = []
     for before, after in pairs:
         metrics = ["map50_95", "motion_misses", "missing_centers", "longest_gap", "rise_mae_px"]
@@ -79,5 +87,8 @@ def compare(experiment):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("experiment", type=Path)
+    parser.add_argument("--low-lr-experiment", type=Path, help="추가 0.0001 실험 폴더")
+    args = parser.parse_args()
     torch.set_num_threads(2)
-    print(compare(parser.parse_args().experiment.resolve()).round(4))
+    extra = args.low_lr_experiment.resolve() if args.low_lr_experiment else None
+    print(compare(args.experiment.resolve(), extra).round(4))
