@@ -76,3 +76,34 @@ def check_training_backgrounds():
     )
     table.to_csv(folder / "training_backgrounds.csv", index=False)
     return table
+
+
+def compare_primary_models():
+    """보조 모델과 선택 순서를 고정하고 주 모델만 바꾼 두 조합을 비교한다."""
+    root = ROOT / "outputs"
+    gpu = root / "plate_cutmix_3090/20261126/paired_review"
+    boolean = {"match": "boolean"}
+    primary = pd.read_csv(gpu / "baseline_frames.csv", dtype=boolean)
+    secondary = pd.read_csv(gpu / "cutmix_frames.csv", dtype=boolean)
+    old = pd.read_csv(root / "plate_cutmix_fallback/frames.csv", dtype=boolean)
+    check_same_labels(primary, secondary)
+    new = fill_missing_boxes(primary, secondary)
+    paired, motion = score_pair(old, new)
+    folder = root / "plate_gpu_primary_fallback"
+    folder.mkdir(exist_ok=True)
+    new.to_csv(folder / "frames.csv", index=False)
+    paired.to_csv(folder / "paired.csv", index=False)
+    motion.to_csv(folder / "summary.csv", index=False)
+
+    bg = pd.read_csv(root / "plate_cutmix_fallback/background_frames.csv")
+    tracks = {name: group.drop(columns="model") for name, group in bg.groupby("model")}
+    combined = fill_missing_boxes(tracks["3090 대조군"], tracks["CutMix"])
+    rows = []
+    for name, track in [("기존 주 모델", tracks["빈 출력 보완"]), ("3090 주 모델", combined)]:
+        for (video, method), group in track.groupby(["video_id", "method"]):
+            present = group.sort_values("frame_index").x1.notna()
+            longest = present.groupby((~present).cumsum()).sum().max()
+            rows.append((name, video, method, len(group), int(present.sum()), int(longest)))
+    backgrounds = pd.DataFrame(rows, columns=["조합", "영상", "방법", "전체", "오탐", "최장 연속"])
+    backgrounds.to_csv(folder / "backgrounds.csv", index=False)
+    return motion, backgrounds
