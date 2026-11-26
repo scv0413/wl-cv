@@ -7,29 +7,9 @@ from wlcv.config import ROOT
 from wlcv.evaluation.box_size_review import iou
 from wlcv.evaluation.plate_cutmix_fallback import fill_missing_boxes
 from wlcv.evaluation.plate_edge_filter import OUTPUT as CANDIDATES
-from wlcv.evaluation.plate_track import BOX, KEY, PlateHistory, expected_center, prepare_candidates
+from wlcv.evaluation.plate_track import BOX, KEY, PlateHistory, choose_plate
 
 OUTPUT = ROOT / "outputs/plate_edge_continuity"
-
-
-def choose_plate(history, candidates, video, frame, width, height, rule):
-    """현재 후보를 거른 뒤에만 이력을 갱신한다. 원본 픽셀 좌표를 사용한다."""
-    now = prepare_candidates(candidates)
-    if rule not in ("off", "strict", "continuity"):
-        raise ValueError(rule)
-    if rule != "off" and not now.empty:
-        bw, bh = now.x2 - now.x1, now.y2 - now.y1
-        edge = (now.x1 <= 1) | (now.y1 <= 1) | (width-now.x2 <= 1) | (height-now.y2 <= 1)
-        blocked = edge & (bh > 0) & (bw >= 3 * bh)
-        if (rule == "continuity" and blocked.any() and history.history
-                and history.last_high is not None and frame - history.last_high <= 2):
-            x, y = expected_center(history.history, frame)
-            _, previous = history.history[-1]
-            radius = (previous.x2 - previous.x1) * 0.5
-            blocked &= np.hypot(now.cx - x, now.cy - y) > radius
-        now = now.loc[~blocked]
-    _, box, source = history.choose(now, video, frame, distance_ratio=0.5)
-    return box, source
 
 
 def model_track(model, rule, sizes):
