@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParameter
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, NonNegativeInt
 from pydantic.json_schema import SkipJsonSchema
 
 from wlcv.config import local_path
@@ -24,7 +24,11 @@ analysis_lock = Lock()
 Side = Literal["left", "right"]
 Mode = Literal["single", "cutmix"]
 AnalysisId = Annotated[str, PathParameter(pattern=r"^[0-9]{8}-[0-9]{6}-[0-9]{6}$")]
-Frame = Annotated[int | None, Form(ge=0, description="원본 프레임 번호. 첫 장은 0입니다.")]
+# multipart 폼에서 빈 문자열은 시점 생략, 숫자 0은 첫 프레임이다.
+Frame = Annotated[
+    NonNegativeInt | Literal[""] | None,
+    Form(examples=[""], description="선택 사항입니다. 시점을 모르면 빈칸으로 두세요. 0은 영상의 첫 프레임입니다."),
+]
 Artifact = Literal["overlay.mp4", "frames.csv", "catch_to_finish.png"]
 MEDIA_TYPES = {"overlay.mp4": "video/mp4", "frames.csv": "text/csv", "catch_to_finish.png": "image/png"}
 
@@ -93,7 +97,7 @@ def create_analysis(
     if Path(filename).suffix.lower() != ".mp4":
         raise HTTPException(415, "MP4 파일을 선택하세요.")
     events = {"lift_off": lift_off, "knee_pass": knee_pass, "drive": drive, "catch": catch, "finish": finish}
-    events = {key: frame for key, frame in events.items() if frame is not None}
+    events = {key: frame for key, frame in events.items() if frame not in (None, "")}
 
     with TemporaryDirectory() as temp:
         path = Path(temp) / filename

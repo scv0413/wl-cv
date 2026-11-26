@@ -60,23 +60,35 @@ def test_saving_catch_graph_works_without_a_gui(tmp_path, monkeypatch):
 
 
 def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkeypatch):
-    def fake_analysis(path, *, plate_mode, **options):
-        return tmp_path / "20261126-123456-000001", sample_summary(plate_mode)
+    def fake_analysis(path, *, plate_mode, manual_events, **options):
+        summary = sample_summary(plate_mode)
+        summary["manual_events"] = manual_events
+        return tmp_path / "20261126-123456-000001", summary
 
     monkeypatch.setattr("wlcv.api.app.analyze_file", fake_analysis)
     schema = app.openapi()
     upload = schema["paths"]["/analyses"]["post"]["requestBody"]["content"]["multipart/form-data"]
     form = upload["schema"]["$ref"].split("/")[-1]
-    assert "plate_mode" not in schema["components"]["schemas"][form]["properties"]
+    properties = schema["components"]["schemas"][form]["properties"]
+    assert "plate_mode" not in properties
+    frames = ("lift_off", "knee_pass", "drive", "catch", "finish")
+    for key in frames:
+        assert properties[key]["examples"] == [""]
 
     async def check():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            for extra, expected in [({}, "cutmix"), ({"plate_mode": "single"}, "single")]:
+            cases = [
+                ({}, "cutmix", {}),
+                (dict.fromkeys(frames, ""), "cutmix", {}),
+                ({"plate_mode": "single", "lift_off": "0"}, "single", {"lift_off": 0}),
+            ]
+            for extra, expected, events in cases:
                 response = await client.post(
                     "/analyses", files={"video": ("snatch.mp4", b"test")},
                     data={"near_side": "left", "facing": "right", **extra},
                 )
                 assert response.status_code == 201
                 assert response.json()["plate_mode"] == expected
+                assert response.json()["manual_events"] == events
 
     asyncio.run(check())
