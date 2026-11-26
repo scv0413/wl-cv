@@ -1,5 +1,6 @@
 """영상의 첫 장을 0번으로 세고, 시간 순서대로 RGB 이미지를 읽는다."""
 
+import os
 from collections.abc import Iterator
 from contextlib import closing
 from pathlib import Path
@@ -16,6 +17,9 @@ def frames_rgb(path: str | Path) -> Iterator[np.ndarray]:
 
 def timed_frames_rgb(path: str | Path) -> Iterator[tuple[float, np.ndarray]]:
     """원본 표시 시각(ms)과 회전이 반영된 RGB 배열을 디코딩 순서대로 돌려준다."""
+    if os.environ.get("WL_VIDEO_DECODER") == "pyav":
+        yield from pyav_frames_rgb(path)
+        return
     capture = cv2.VideoCapture(str(path))
     try:
         if not capture.isOpened():
@@ -28,6 +32,31 @@ def timed_frames_rgb(path: str | Path) -> Iterator[tuple[float, np.ndarray]]:
             yield time_ms, cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     finally:
         capture.release()
+
+
+def pyav_frames_rgb(path: str | Path) -> Iterator[tuple[float, np.ndarray]]:
+    """Linux 배포에서 FFmpeg 버전과 색 변환을 고정하고 원본 표시 시각을 보존한다."""
+    import av
+
+    from wlcv.data.mp4_input import VideoInputError
+
+    rotations = {90: cv2.ROTATE_90_COUNTERCLOCKWISE, -90: cv2.ROTATE_90_CLOCKWISE,
+                 180: cv2.ROTATE_180, -180: cv2.ROTATE_180}
+    try:
+        with av.open(str(path)) as video:
+            stream = video.streams.video[0]
+            start = float((stream.start_time or 0) * stream.time_base)
+            for frame in video.decode(stream):
+                if frame.time is None:
+                    raise VideoInputError("영상 프레임의 표시 시각을 읽을 수 없습니다.")
+                # Mac 기준 디코더와 같은 방식으로 색차 채널을 확대해 BGR로 변환한다.
+                bgr = frame.reformat(format="bgr24", interpolation="BICUBIC").to_ndarray()
+                rotation = rotations.get(frame.rotation)
+                if rotation is not None:
+                    bgr = cv2.rotate(bgr, rotation)
+                yield (frame.time - start) * 1000, cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    except av.FFmpegError as exc:
+        raise VideoInputError("영상 스트림을 디코딩할 수 없습니다.") from exc
 
 
 def read_rgb(video_path: str | Path, frame_index: int) -> np.ndarray:
