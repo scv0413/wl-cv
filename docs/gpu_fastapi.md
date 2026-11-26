@@ -69,7 +69,7 @@ python -m uvicorn wlcv.api.app:app --host 127.0.0.1 --port 8000
 
 ## 저장소 Dockerfile로 빌드한 이미지 검증
 
-비공개 GitHub Actions에서 `deploy/gpu/Dockerfile`을 Linux AMD64로 빌드했다. Community RTX 3090 Pod에 다음 다이제스트를 지정했고, 이미지의 기본 명령으로 FastAPI가 시작됐다. 네 TensorRT 엔진은 실행할 때 별도로 전달했다. [이미지 빌드 기록](https://github.com/scv0413/wl-cv/actions/runs/45820280308)
+GitHub Actions에서 `deploy/gpu/Dockerfile`을 Linux AMD64로 빌드했다. Community RTX 3090 Pod에 다음 다이제스트를 지정했고, 이미지의 기본 명령으로 FastAPI가 시작됐다. 네 TensorRT 엔진은 실행할 때 별도로 전달했다. 기존 실행 로그와 레지스트리 이미지는 비공개로 보관한다. 같은 빌드 절차는 [GPU 이미지 워크플로](../.github/workflows/gpu-image.yml)에서 확인할 수 있다.
 
 ```text
 ghcr.io/scv0413/wl-cv-gpu-api@sha256:d815f96d00f5f20ec15cf03ed5dab1de3c84e107ff7ad1e980ba7c8d105e3e2a
