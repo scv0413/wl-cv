@@ -144,9 +144,8 @@ def compare(output):
 def endpoint_readout(output):
     """수동 시점 12장만 새로 추론한다. 두 장 모두 추적 박스와 겹칠 때만 상승량을 교체한다."""
     from wlcv.data.frames import read_rgb
-    from wlcv.evaluation.box_size_review import iou
-    from wlcv.evaluation.plate_track import BOX, PlateHistory, choose_plate
-    from wlcv.evaluation.plots import predict_rgb
+    from wlcv.evaluation.plate_track import BOX
+    from wlcv.evaluation.plate_endpoint_rise import check_endpoint, detect_endpoint, select_rise
 
     athletes = pd.read_csv(output / "athletes.csv")
     reference = athletes[athletes.case.eq("mac")]
@@ -158,30 +157,20 @@ def endpoint_readout(output):
         by_frame = {}
         for index in [athlete.knee, athlete.contact]:
             image = read_rgb(VIDEOS / f"{video}.mp4", index)
-            boxes = predict_rgb(model, image, conf=0.001, imgsz=640, device="cpu").boxes.cpu()
-            candidates = pd.DataFrame(boxes.xyxy.tolist(), columns=BOX)
-            candidates["confidence"] = boxes.conf.tolist()
-            candidates["video_id"], candidates["frame_index"] = video, index
-            height, width = image.shape[:2]
-            chosen, _ = choose_plate(PlateHistory(), candidates, video, index, width, height, "continuity")
-            by_frame[index] = chosen
+            by_frame[index] = detect_endpoint(model, image[:, :, ::-1].copy(), video, index, "cpu")
 
         for case in ["mac", "mac+cutmix"]:
-            cosine_y, baseline_y = [], []
+            checks = []
             for index, chosen in by_frame.items():
                 prior = frames.loc[(case, video, index)]
-                baseline_y.append(prior.cy)
-                overlap = float("nan")
-                if chosen is not None and pd.notna(prior.cx):
-                    overlap = iou(prior[BOX].to_numpy(float), chosen[BOX].to_numpy(float))
-                    if overlap >= 0.50:
-                        cosine_y.append(chosen.cy)
-                points.append(dict(case=case, video_id=video, frame_index=index, inter_model_iou=overlap,
-                                   accepted=overlap >= 0.50))
-            use_cosine = len(cosine_y) == 2
-            first, last = cosine_y if use_cosine else baseline_y
-            rise = first - last
-            rises.append(dict(case=case, video_id=video, source="cosine" if use_cosine else case,
+                point = check_endpoint(index, prior[BOX].to_numpy(float), prior.cy, prior.selected_model, chosen)
+                checks.append(point)
+                points.append(dict(case=case, video_id=video, frame_index=index,
+                                   inter_model_iou=point["inter_model_iou"], accepted=point["accepted"]))
+            source, rise = select_rise(checks)
+            if rise is None:
+                rise = float("nan")
+            rises.append(dict(case=case, video_id=video, source=case if source == "tracking" else source,
                               rise_px=rise, manual_rise_px=athlete.manual_rise_px,
                               error_px=rise - athlete.manual_rise_px))
     pd.DataFrame(points).to_csv(output / "endpoint_checks.csv", index=False)

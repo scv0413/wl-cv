@@ -32,4 +32,5 @@ DATASET = local_path("WL_DATASET_DIR", "outputs/dataset")
 RUNS = local_path("WL_RUNS_DIR", "outputs/runs")
 WEIGHTS = local_path("WL_WEIGHTS", "models/yolo26n.pt")
 CUTMIX_WEIGHTS = ROOT / "outputs/plate_cutmix_3090/20261126/runs/cutmix/weights/best.pt"
+COSINE_WEIGHTS = local_path("WL_COSINE_WEIGHTS", "outputs/plate_lr_grid/20261126/runs/lr0005_cosine/weights/best.pt")
 DEVICE = training_device()
