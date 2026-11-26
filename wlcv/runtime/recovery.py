@@ -12,17 +12,24 @@ def landmarks(rows):
 
 
 def plot_interval(rows, *, title, note, fig=None):
+    from matplotlib import font_manager
+
+    installed = set(font_manager.get_font_names())
+    korean_fonts = ("Apple SD Gothic Neo", "Malgun Gothic", "NanumGothic", "Noto Sans CJK KR", "Noto Sans KR", "Noto Sans CJK JP")
+    font = next((name for name in korean_fonts if name in installed), "sans-serif")
     if fig is None:
         import matplotlib.pyplot as plt
         fig = plt.figure()  # 노트북에서 표시할 그림
     fig.set_size_inches(9.8, 6.0)
     fig.set_layout_engine("constrained")
     axes = fig.subplots(2, 1, sharex=True)
-    fig.suptitle(f"{title}    /    Catch to finish", fontweight="bold")
+    fig.suptitle("Plate relative to near shoulder\n캐치부터 피니시까지 원판 중심은 가까운 쪽 어깨를 기준으로 얼마나 앞뒤로 움직이는가?",
+                 fontfamily=font, fontweight="bold")
+    start, end = rows.index[0], rows.index[-1]
     guides = landmarks(rows)
     for ax, column, color, title, units in [
-        (axes[0], "forward_px", "#006f69", "Plate relative to near shoulder   (+ forward / - behind)", "Distance (px)"),
-        (axes[1], "trunk_angle_deg", "#8d4a18", "Near shoulder–hip line from vertical   (0 = upright)", "Angle (deg)"),
+        (axes[0], "forward_px", "#006f69", f"{title} / Catch to finish ({start}–{end})\n원판 중심과 어깨의 가로 거리 (+ 선수 앞쪽 / - 뒤쪽)", "Distance (px)"),
+        (axes[1], "trunk_angle_deg", "#8d4a18", "Trunk inclination\n일어서는 동안 몸통이 수직에서 얼마나 기울어져 있는가? (0° = 수직)", "Angle (deg)"),
     ]:
         y = rows[column]
         ax.plot(rows.index, y, ".-", color=color, linewidth=2, markersize=5)
@@ -33,12 +40,12 @@ def plot_interval(rows, *, title, note, fig=None):
                 ax.scatter(frame, y.loc[frame], s=56, facecolors="white", edgecolors=color, zorder=3)
                 ax.annotate(f"{y.loc[frame]:.1f}", (frame, y.loc[frame]), xytext=(0, 9),
                             textcoords="offset points", ha="center", color=color)
-        ax.set_title(title, loc="left", fontsize=11)
+        ax.set_title(title, loc="left", fontsize=11, fontfamily=font)
         ax.set_ylabel(units)
         ax.grid(axis="y", alpha=.18)
         ax.spines[["top", "right"]].set_visible(False)
         ax.margins(y=.22, x=.05)
-    ticks = sorted(set(range(rows.index[0], rows.index[-1] + 1, 5)) | set(guides))
+    ticks = sorted({round(start + (end - start) * i / 8) for i in range(9)})
     axes[-1].set_xticks(ticks)
     axes[-1].set_xlabel("Original frame (0-based)")
     fig.supxlabel(note,
@@ -66,7 +73,8 @@ def save_recovery_curve(rows, events, folder):
         return result
     from matplotlib.figure import Figure
     # HTTP 요청은 작업 스레드에서 실행된다. PNG 저장에는 화면 창이 필요 없다.
-    figure = plot_interval(interval, title="Plate and pose",
-                           note="Model estimates in source pixels and degrees.", fig=Figure())
+    note = (f"Frames with measurements: plate–shoulder {len(offsets)}/{len(interval)}, "
+            f"trunk {angles.count()}/{len(interval)}. Gaps indicate unavailable measurements.")
+    figure = plot_interval(interval, title="Plate and pose", note=note, fig=Figure())
     figure.savefig(folder / "catch_to_finish.png", dpi=145)
     return result

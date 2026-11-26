@@ -25,11 +25,23 @@ uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --por
 | --- | --- |
 | `POST /analyses` | 완료 시 201, 분석 ID·요약·파일 링크. `Location` 헤더로도 요약 주소를 확인합니다. |
 | `GET /analyses/{analysis_id}` | 저장된 요약과 파일 링크 |
+| `GET /analyses/{analysis_id}/catch-to-finish` | 오버레이를 보며 캐치와 피니시를 선택하는 화면 |
+| `POST /analyses/{analysis_id}/catch-to-finish` | 선택한 두 시점과 저장된 CSV로 그래프를 만들고 측정 가능한 프레임 수 반환 |
 | `GET /analyses/{analysis_id}/files/{filename}` | 오버레이 MP4, 프레임 CSV 또는 생성된 캐치→피니시 PNG |
 
 응답의 `plate_mode=cutmix`는 자동 보완을 켰다는 뜻입니다. `selected_model_counts.cutmix`는 실제로 보조 좌표를 채택한 프레임 수입니다. 베이스라인 단독 비교는 CLI의 `--plate-mode single`로 재현할 수 있습니다.
 
 `plate_counts`는 직접 검출·시간 연결·좌표 누락을 셉니다. 새 영상은 수동 정답이 없어 정확도·오탐률을 채점할 수 없습니다. `lift_to_knee_rise_px`는 이륙→무릎 통과, `knee_to_contact_rise_px`는 무릎 통과→접촉 상승량입니다. 수동 시점이나 좌표가 빠져 계산할 수 없으면 값은 `null`입니다. 후자의 측정 출처와 보류 이유도 함께 반환합니다.
+
+## 분석 후 캐치·피니시 그래프 만들기
+
+1. 완료 응답의 `recovery_review_url`을 같은 서버에서 엽니다. 이전 분석도 ID로 요약을 다시 조회하면 이 경로가 표시됩니다.
+2. 오버레이를 멈추고 캐치와 피니시에서 각각 **현재 프레임 선택**을 누릅니다. 이전·다음 프레임 버튼으로 한 장씩 이동하거나 화면의 Frame 번호를 직접 입력할 수 있습니다.
+3. **그래프 만들기**를 누르면 구간 내 측정 장수와 그래프가 나타납니다. **그래프 PNG 저장**으로 내려받습니다. 다시 열면 마지막으로 저장한 구간이 표시됩니다.
+
+위 그래프는 카메라에 가까운 쪽 어깨를 기준으로 원판 박스 중심이 얼마나 앞(+)이나 뒤(−)에 있는지 픽셀로 보여줍니다. 아래 그래프는 어깨와 골반을 연결한 선의 수직 기준 기울기입니다. 측정값이 없는 구간은 선이 끊기며, 두 지표가 모두 비면 이유를 표시합니다. 그래프의 한글을 표시하려면 실행 환경에 한글 글꼴이 있어야 합니다. Mac은 Apple SD Gothic Neo, Linux는 Noto Sans CJK를 사용할 수 있습니다.
+
+사후 선택은 그래프용 판독으로 저장합니다. `manual_events`와 원래 오버레이·CSV는 업로드 당시의 기록이며, 현재 그래프에 쓰인 두 시점은 응답의 `catch_to_finish`에서 확인합니다.
 
 ## c04 재현
 
