@@ -1,0 +1,17 @@
+name: wlcv-cpu
+services:
+  api:
+    build: .
+    image: wlcv-api:cpu
+    ports:
+      - "127.0.0.1:${WL_CPU_PORT:-8001}:8000"
+    volumes:
+      - type: bind
+        source: ${WL_CPU_WEIGHTS_DIR:-./models/pytorch}
+        target: /models/pytorch
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WL_CPU_RESULTS_DIR:-./outputs/docker_analysis}
+        target: /results
