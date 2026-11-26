@@ -1,4 +1,4 @@
-"""같은 RTX 3090에서 원본 가중치로 네 학습률 조건을 독립적으로 학습한다."""
+"""같은 RTX 3090에서 원본 가중치로 학습률 조건을 독립적으로 학습한다."""
 import argparse
 import csv
 import hashlib
@@ -15,6 +15,11 @@ CASES = {
     "lr0005_linear": (0.0005, False),
     "lr0005_cosine": (0.0005, True),
 }
+LOW_LR_CASES = {
+    "lr0001_linear": (0.0001, False),
+    "lr0001_cosine": (0.0001, True),
+}
+TRAIN_CASES = CASES | LOW_LR_CASES
 INPUT_HASH = "aaf184492fc91e32969b77e51a6bd2ec7f5b36908ca662a36ef8d53168c381c9"
 
 
@@ -27,7 +32,7 @@ def train(case):
         raise RuntimeError("PyTorch, Ultralytics, 실제 GPU를 확인하세요.")
     plugins = ["sync", "wandb", "clearml", "comet", "mlflow", "neptune", "raytune", "hub", "dvc", "tensorboard"]
     settings.update({key: False for key in plugins if key in settings})
-    lr, cosine = CASES[case]
+    lr, cosine = TRAIN_CASES[case]
     args = json.loads((root / "settings.json").read_text())
     # 기존 auto가 실제로 고른 AdamW의 beta1과 bias 워밍업 시작값을 유지한다.
     args.update(epochs=200, patience=30, optimizer="AdamW", momentum=0.9,
@@ -66,5 +71,5 @@ def train(case):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("case", choices=CASES)
+    parser.add_argument("case", choices=TRAIN_CASES)
     train(parser.parse_args().case)
