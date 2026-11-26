@@ -37,3 +37,15 @@ def test_endpoint_iou_rejection_uses_both_tracking_centers():
     assert select_rise([knee, contact]) == ("tracking", -100.)
     missing = check_endpoint(2, np.full(4, np.nan), np.nan, "none", cosine)
     assert select_rise([knee, missing]) == (None, None)
+
+
+def test_explicit_deployment_folder_keeps_missing_models_in_that_folder(monkeypatch, tmp_path):
+    """배포 폴더에 없는 모델을 로컬 학습 폴더에서 조용히 읽지 않는다."""
+    from wlcv.runtime.models import experiment_models, file_models
+
+    monkeypatch.delenv("WL_MODEL_DIR", raising=False)
+    assert file_models() == experiment_models()
+    monkeypatch.setenv("WL_MODEL_DIR", str(tmp_path))
+    weights = file_models()
+    assert weights.plate == tmp_path / "pytorch/plate_baseline.pt"
+    assert weights.cosine == tmp_path / "pytorch/plate_cosine.pt"

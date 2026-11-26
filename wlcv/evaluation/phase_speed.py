@@ -9,6 +9,8 @@ from wlcv.config import ANNOTATIONS, RUNS, VIDEOS
 from wlcv.data.frames import timed_frames_rgb
 from wlcv.evaluation.full_video import detect_videos
 from wlcv.evaluation.plate_track import select_centers
+from wlcv.runtime.measurements import vertical_speeds
+
 
 PHASES = ("lift", "knee", "contact")
 
@@ -36,22 +38,6 @@ def model_plates(videos):
     frames, candidates = detect_videos(RUNS / "plate_baseline/weights/best.pt", videos)
     choices = select_centers(frames, candidates, distance_ratio=0.5)
     return choices[choices.method == "Past link"].copy()
-
-
-def vertical_speeds(time_ms, height_y):
-    """속도는 원본 px/s, 위쪽이 양수. 1 px 이하의 후반 상승량은 비율 계산을 보류한다."""
-    dt = np.diff(np.asarray(time_ms, dtype=float)) / 1000
-    if len(dt) != 2 or not np.isfinite(dt).all() or (dt <= 0).any():
-        return dict(early=np.nan, late=np.nan, ratio=np.nan, reason="시각 확인 필요")
-    rise = -np.diff(np.asarray(height_y, dtype=float))
-    early, late = rise / dt
-    if not np.isfinite(rise).all():
-        reason = "끝점 누락"
-    elif rise[1] <= 1:
-        reason = "후반 상승량 1 px 이하"
-    else:
-        reason = ""
-    return dict(early=early, late=late, ratio=np.nan if reason else early/late, reason=reason)
 
 
 def compare_speeds(plates):

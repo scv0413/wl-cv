@@ -5,12 +5,7 @@ import pandas as pd
 from matplotlib.patches import Rectangle
 
 from wlcv.data.plate_labels import read_boxes
-
-
-def predict_rgb(model, frame, *, conf=0.25, imgsz=640, device="cpu"):
-    """RGB 프레임을 Ultralytics의 BGR 배열 입력으로 변환한다."""
-    return model.predict(frame[:, :, ::-1].copy(), imgsz=imgsz, conf=conf,
-                         device=device, verbose=False)[0]
+from wlcv.runtime.inference import predict_rgb
 
 
 def plot_comparison(frame, label_file, prediction, title):

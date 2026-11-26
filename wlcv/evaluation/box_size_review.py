@@ -8,6 +8,8 @@ from tqdm.auto import tqdm
 
 from wlcv.config import VIDEOS
 from wlcv.data.frames import read_rgb
+from wlcv.runtime.tracking import iou
+
 
 KEY = ["video_id", "frame_index"]
 BOX = ["x1", "y1", "x2", "y2"]
@@ -25,13 +27,6 @@ def smooth_size(current, previous, width, height):
     if np.any(result[:2] < 0) or np.any(result[2:] > [width, height]):
         return current, "outside_frame"
     return result, "averaged"
-
-
-def iou(box, truth):
-    if not np.isfinite(box).all():
-        return np.nan
-    overlap = np.maximum(0, np.minimum(box[2:], truth[2:]) - np.maximum(box[:2], truth[:2])).prod()
-    return overlap / (np.prod(box[2:] - box[:2]) + np.prod(truth[2:] - truth[:2]) - overlap)
 
 
 def compare_sizes(frames, history, metadata):
