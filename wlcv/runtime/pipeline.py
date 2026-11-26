@@ -21,7 +21,7 @@ from wlcv.runtime.recovery import save_recovery_curve
 
 
 def analyze_file(path, *, near_side, facing, manual_events=None, device="cpu",
-                 read_mode="single-pass", plate_imgsz=640, plate_mode="single"):
+                 read_mode="single-pass", plate_imgsz=640, plate_mode="single", output_parent=None):
     """새 MP4의 공개 진입점. 시점은 0부터 세는 원본 프레임 번호다."""
     start = perf_counter()
     if near_side not in ("left", "right") or facing not in ("left", "right"):
@@ -30,9 +30,10 @@ def analyze_file(path, *, near_side, facing, manual_events=None, device="cpu",
     events = dict(manual_events or {})
     validate_events(events)
     info = inspect_mp4(path, near_side)
+    parent = local_path("WL_OUTPUT_DIR", "outputs/file_analysis") if output_parent is None else Path(output_parent)
     return analyze_video(
         path, info, video=path.stem, fps=info.fps, direction={"left": -1, "right": 1}[facing],
-        events=events, parent=local_path("WL_OUTPUT_DIR", "outputs/file_analysis"),
+        events=events, parent=parent,
         weights=file_models(), input_mode="file", start=start, device=device,
         read_mode=read_mode, plate_imgsz=plate_imgsz, plate_mode=plate_mode,
     )

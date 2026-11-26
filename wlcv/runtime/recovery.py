@@ -11,9 +11,13 @@ def landmarks(rows):
     return sorted(set(frames))
 
 
-def plot_interval(rows, *, title, note):
-    import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(2, 1, sharex=True, figsize=(9.8, 6.0), layout="constrained")
+def plot_interval(rows, *, title, note, fig=None):
+    if fig is None:
+        import matplotlib.pyplot as plt
+        fig = plt.figure()  # 노트북에서 표시할 그림
+    fig.set_size_inches(9.8, 6.0)
+    fig.set_layout_engine("constrained")
+    axes = fig.subplots(2, 1, sharex=True)
     fig.suptitle(f"{title}    /    Catch to finish", fontweight="bold")
     guides = landmarks(rows)
     for ax, column, color, title, units in [
@@ -60,10 +64,9 @@ def save_recovery_curve(rows, events, folder):
     if offsets.empty and angles.isna().all():
         result["reason"] = "구간 내 원판·어깨 거리와 체간 관측이 없습니다."
         return result
-    import matplotlib.pyplot as plt
-    figure = plot_interval(interval, title="Plate and pose", note="Model estimates in source pixels and degrees.")
-    try:
-        figure.savefig(folder / "catch_to_finish.png", dpi=145)
-    finally:
-        plt.close(figure)
+    from matplotlib.figure import Figure
+    # HTTP 요청은 작업 스레드에서 실행된다. PNG 저장에는 화면 창이 필요 없다.
+    figure = plot_interval(interval, title="Plate and pose",
+                           note="Model estimates in source pixels and degrees.", fig=Figure())
+    figure.savefig(folder / "catch_to_finish.png", dpi=145)
     return result

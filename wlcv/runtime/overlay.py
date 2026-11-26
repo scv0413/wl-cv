@@ -8,6 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from wlcv.data.frames import timed_frames_rgb
+from wlcv.data.mp4_input import VideoInputError
 from wlcv.runtime.inference import predict_rgb
 from wlcv.runtime.measurements import vertical_angle
 from wlcv.runtime.pose import joint_table
@@ -143,7 +144,7 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
         writer.release()  # 인코더에 남은 프레임과 MP4 컨테이너를 마무리한다.
         write_seconds += perf_counter() - started
     if not records:
-        raise ValueError("영상에서 디코딩한 프레임이 없습니다.")
+        raise VideoInputError("영상에서 디코딩한 프레임이 없습니다.")
     if info.frame_count is not None and len(records) != info.frame_count:
         raise ValueError("원본 디코딩 장수와 등록된 프레임 수가 다릅니다.")
     timings.update(drawing=draw_seconds, writer=write_seconds)
