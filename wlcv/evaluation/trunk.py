@@ -1,11 +1,11 @@
 """수동 어깨와 골반을 이은 선이 화면 수직선에서 얼마나 기울었는지 비교한다."""
 
-from math import atan2, degrees
 import matplotlib.pyplot as plt
 
 from wlcv.annotation.pose_points import load_points, pose_point_path
 from wlcv.annotation.trunk import pair_path, read_pair
 from wlcv.data.frames import read_rgb
+from wlcv.runtime.measurements import vertical_angle
 
 
 def point_label(point):
@@ -26,15 +26,6 @@ def frame_angle(points):
         return None
     return vertical_angle((int(shoulder["x_px"]), int(shoulder["y_px"])),
                           (int(hip["x_px"]), int(hip["y_px"])))
-
-
-def vertical_angle(shoulder, hip):
-    """원본 좌표로 위쪽 수직선과의 각도를 구한다. 모델의 소수 픽셀 좌표도 유지한다."""
-    dx = shoulder[0] - hip[0]
-    up = hip[1] - shoulder[1]
-    if dx == 0 and up == 0:
-        return None
-    return degrees(atan2(abs(dx), up))
 
 
 def review_trunk(video, info, folder, *, pass_number=1):

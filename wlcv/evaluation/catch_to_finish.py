@@ -3,13 +3,18 @@
 import json
 
 import cv2
-import matplotlib.pyplot as plt
 import pandas as pd
 
 from wlcv.annotation.pose_points import load_points, pose_point_path
 from wlcv.annotation.storage import load_events
 from wlcv.config import ANNOTATIONS
 from wlcv.evaluation.catch_offset import FACING
+from wlcv.runtime.recovery import landmarks, plot_interval as draw_interval
+
+
+def plot_interval(rows, *, title="c04", note="Model estimates per frame. At catch, the manual shoulder and hip were both estimated."):
+    return draw_interval(rows, title=title, note=note)
+
 
 VIDEO = "c04_sn_f_01"
 
@@ -37,45 +42,6 @@ def read_interval(run):
             point = points.get(joint)
             rows.loc[frame, column] = point["status"] if point and point["side"] == "left" else "unreviewed"
     return rows
-
-
-def landmarks(rows):
-    """중간의 최대 후방 간격과 시작·종료 프레임을 같은 그림에서 확인한다."""
-    valid = rows.forward_px.dropna()
-    frames = [rows.index[0], rows.index[-1]]
-    if not valid.empty:
-        frames.append(valid.idxmin())
-    return sorted(set(frames))
-
-
-def plot_interval(rows, *, title="c04", note="Model estimates per frame. At catch, the manual shoulder and hip were both estimated."):
-    fig, axes = plt.subplots(2, 1, sharex=True, figsize=(9.8, 6.0), layout="constrained")
-    fig.suptitle(f"{title}    /    Catch to finish", fontweight="bold")
-    guides = landmarks(rows)
-    for ax, column, color, title, units in [
-        (axes[0], "forward_px", "#006f69", "Plate relative to near shoulder   (+ forward / - behind)", "Distance (px)"),
-        (axes[1], "trunk_angle_deg", "#8d4a18", "Near shoulder–hip line from vertical   (0 = upright)", "Angle (deg)"),
-    ]:
-        y = rows[column]
-        ax.plot(rows.index, y, ".-", color=color, linewidth=2, markersize=5)
-        ax.axhline(0, color="0.4", linewidth=.8)
-        for frame in guides:
-            ax.axvline(frame, color="0.75", linestyle=":", linewidth=1)
-            if pd.notna(y.loc[frame]):
-                ax.scatter(frame, y.loc[frame], s=56, facecolors="white", edgecolors=color, zorder=3)
-                ax.annotate(f"{y.loc[frame]:.1f}", (frame, y.loc[frame]), xytext=(0, 9),
-                            textcoords="offset points", ha="center", color=color)
-        ax.set_title(title, loc="left", fontsize=11)
-        ax.set_ylabel(units)
-        ax.grid(axis="y", alpha=.18)
-        ax.spines[["top", "right"]].set_visible(False)
-        ax.margins(y=.22, x=.05)
-    ticks = sorted(set(range(rows.index[0], rows.index[-1] + 1, 5)) | set(guides))
-    axes[-1].set_xticks(ticks)
-    axes[-1].set_xlabel("Original frame (0-based)")
-    fig.supxlabel(note,
-                  fontsize=9, color="0.3")
-    return fig
 
 
 def write_clip(run, rows, destination):

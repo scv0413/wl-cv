@@ -1,23 +1,15 @@
 """전체 영상을 처음부터 읽고, 정답과 독립적으로 두 방법의 원판 후보를 선택한다."""
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
-from ultralytics import YOLO
 
 from wlcv.annotation.storage import EVENTS, load_events
 from wlcv.config import ROOT, SPLIT, VIDEOS
 from wlcv.data.frames import frames_rgb
 from wlcv.evaluation.plate_track import BOX, KEY, select_centers
 from wlcv.evaluation.plots import predict_rgb
-
-
-def load_plate_model(weights):
-    model = YOLO(str(Path(weights).resolve(strict=True)))
-    if model.names != {0: "plate"}:
-        raise ValueError("원판 탐지 가중치가 필요합니다.")
-    return model
+from wlcv.runtime.inference import load_plate_model
 
 
 def validation_plate_model(weights, video_ids, split_csv=SPLIT):
