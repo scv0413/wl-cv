@@ -23,7 +23,8 @@ def chart_path(folder, review):
 
 
 def create_review(folder, summary, catch, finish):
-    events = {**summary["manual_events"], "catch": catch, "finish": finish}
+    events = {**summary["manual_events"], **summary.get("pull_review", {}).get("events", {}),
+              "catch": catch, "finish": finish}
     validate_events(events, summary["frame_count"])
     rows = pd.read_csv(folder / "frames.csv", usecols=["frame_index", "forward_px", "trunk_angle_deg"])
     with TemporaryDirectory(dir=folder) as temp:

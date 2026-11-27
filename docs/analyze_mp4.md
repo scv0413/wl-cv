@@ -51,7 +51,7 @@ uv run --frozen --env-file .env python -m wlcv.analyze "./videos/my lift.mp4" --
 
 ## 아는 시점만 지정하기
 
-수동 프레임 번호는 첫 프레임을 0번으로 센다. 이륙·무릎 통과를 주면 원판 상승량, 접촉까지 주면 당기기 평균 속도와 구간 비율을 계산한다. 캐치만 주면 캐치 순간의 어깨 기준 바 위치를, 캐치·피니시를 주면 두 시점 사이의 곡선을 확인할 수 있다.
+프레임 번호는 0부터 센다. ready·transition을 지정하거나 자동 후보를 사용해 두 구간의 평균속도를 계산한다. 뒤 구간은 transition부터 첫 상승 최고점까지다. 원판이 올라간 뒤 세 프레임 연속 내려와야 최고점을 확정한다. 확인이 어려우면 후반 속도와 비율을 보류한다. 캐치만 주면 캐치 순간의 어깨 기준 바 위치를, 캐치·피니시를 주면 두 시점 사이의 곡선을 확인할 수 있다.
 
 ```sh
 uv run --frozen --env-file .env python -m wlcv.analyze data/raw/videos/c04_sn_f_01.mp4 --near-side left --facing left --device mps \
@@ -90,7 +90,7 @@ c04와 a03 원본을 등록표에 없는 이름으로 열었다. 두 방향은 �
 
 원본을 읽는 중 오버레이를 그리기 전에 해당 두 장을 보관한다. 코사인은 각 장을 입력 크기 640으로 독립 추론한다. 두 장 모두 직접 검출 신뢰도 0.10 이상이고 코사인 박스와 기존 추적 박스의 IoU가 각각 0.50 이상이면 코사인 박스 중심으로 상승량을 계산한다. 한 장이라도 통과하지 못하면 **두 시점 모두** 기존 추적 좌표를 사용한다. 기존 추적 좌표까지 빠진 시점이 있으면 측정을 보류한다.
 
-`summary.json`의 `knee_to_contact_rise`에 위쪽을 양수로 한 `rise_px`, 두 프레임 번호, 출처(`source`)와 시점별 판정(`endpoints`)이 들어 있다. 출처는 `cosine`, `tracking`, 측정 보류 시 `null`이다. 코칭 결과의 `pulls.late`는 이 상승량을 원본 경과 시간(초)으로 나눈 값이다. `pulls.early`는 이륙·무릎 통과의 추적 좌표에서 계산하며, `pulls.ratio`는 `early / late`다. 후반 상승량이 1px 이하면 비율을 보류한다. 오버레이와 프레임 CSV에는 영상 전체의 추적 좌표를 기록한다.
+`summary.json`의 `knee_to_contact_rise`에 위쪽을 양수로 한 `rise_px`, 두 프레임 번호, 출처(`source`)와 시점별 판정(`endpoints`)이 들어 있다. 출처는 `cosine`, `tracking`, 측정 보류 시 `null`이다. 코칭 결과의 `pulls.early`, `pulls.late`는 같은 추적 중심에서 ready → transition, transition → 첫 상승 최고점의 상승량을 각 구간의 원본 경과 시간으로 나눈다. `pulls.first_peak_frame`은 확인된 끝점이고 `pulls.late_over_early`는 뒤/앞 비율이다. 오버레이와 프레임 CSV에는 영상 전체의 추적 좌표를 기록한다.
 
 기존 실험 경로를 사용할 때 코사인 가중치는 `outputs/plate_lr_grid/20261126/runs/lr0005_cosine/weights/best.pt`다. 다른 위치에 저장했다면 환경변수 `WL_COSINE_WEIGHTS`에 경로를 지정한다. 가중치 파일이 없으면 기존 추적 좌표로 계산하고 사유를 남긴다. 무릎 통과 또는 접촉을 지정하지 않은 파일에서는 코사인 가중치를 열지 않는다.
 

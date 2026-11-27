@@ -32,7 +32,8 @@ def draw_pose(image, result, near_side, *, selection=None):
     else:
         number, reason = selection
     record = {"person_candidates": count, "performer_number": number, "performer_selection": reason, "pose_side": near_side, "joints_drawn": 0,
-              "shoulder_x_px": None, "shoulder_y_px": None, "trunk_angle_deg": None}
+              "shoulder_x_px": None, "shoulder_y_px": None, "trunk_angle_deg": None,
+              "hip_y_px": None, "knee_y_px": None, "ankle_y_px": None}
     box = result.boxes.xyxy[number - 1] if number is not None else (None,) * 4
     for key, value in zip(("performer_x1", "performer_y1", "performer_x2", "performer_y2"), box):
         record[key] = float(value) if value is not None else None
@@ -48,6 +49,9 @@ def draw_pose(image, result, near_side, *, selection=None):
         if point["표시 상태"] != "표시":
             previous = None
             continue
+        height_key = {"골반": "hip_y_px", "무릎": "knee_y_px", "발목": "ankle_y_px"}.get(point["관절"])
+        if height_key:
+            record[height_key] = float(point["y (px)"])
         if point["관절"] == "어깨":
             record["shoulder_x_px"] = float(point["x (px)"])
             record["shoulder_y_px"] = float(point["y (px)"])
@@ -129,7 +133,7 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
             if index != plate.frame_index or image.shape[:2] != (info.height, info.width):
                 raise ValueError(f"{index}번 원본의 크기 또는 프레임 번호를 확인하세요.")
             if endpoint_images is not None and index in endpoint_images:
-                endpoint_images[index] = image.copy()  # 그리기 전 BGR 원본 두 장만 보존한다.
+                endpoint_images[index] = image.copy()  # 측정할 끝점의 그리기 전 BGR 원본만 보존한다.
             drawing = perf_counter()
             selection = ((plate.performer_number, plate.performer_selection)
                          if hasattr(plate, "performer_selection") else None)
@@ -150,6 +154,8 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
                 "plate_confidence": plate.confidence, "plate_cx_px": plate.cx, "plate_cy_px": plate.cy,
                 "plate_x1": plate.x1, "plate_y1": plate.y1,
                 "plate_x2": plate.x2, "plate_y2": plate.y2, **pose,
+                "plate_clipped": bool(plate.x1 <= 0 or plate.y1 <= 0 or
+                                      plate.x2 >= info.width - 1 or plate.y2 >= info.height - 1),
             })
             if hasattr(plate, "selected_model"):
                 records[-1]["selected_model"] = plate.selected_model

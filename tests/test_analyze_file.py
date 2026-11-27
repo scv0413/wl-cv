@@ -53,19 +53,26 @@ def test_endpoint_iou_rejection_uses_both_tracking_centers():
     assert select_rise([knee, missing]) == (None, None)
 
 
-def test_coaching_ratio_uses_selected_rise_and_original_time():
-    rows = pd.DataFrame({"frame_index": [0, 1, 2], "source_time_ms": [50, 450, 650],
-                         "plate_cy_px": [180., 100., 30.]})
-    def pulls(lift, rise, source):
-        selected = {"rise_px": rise, "source": source}
-        return coaching_summary(rows, lift, 1, {"drive": 2}, None, knee_to_contact=selected)["pulls"]
+def test_first_rise_peak_uses_the_turning_frame_and_original_time():
+    rows = pd.DataFrame({"frame_index": range(10), "source_time_ms": [0, 100, 200, 300, 450, 500, 550, 600, 650, 700],
+                         "plate_cy_px": [110., 100., 90., 60., 30., 31., 34., 37., 10., 0.]})
+    rows = rows.assign(plate_cx_px=0., shoulder_x_px=0., shoulder_y_px=0.)
+    for extra in ({}, {"drive": 3, "catch": 8}):
+        pulls = coaching_summary(rows, 0, 1, extra, None)["pulls"]
+        assert pulls["first_peak_frame"] == 4
+        assert (pulls["early"], pulls["late"], pulls["late_over_early"]) == pytest.approx((100., 200., 2.))
 
-    cosine = pulls(0, 100., "cosine")
-    assert (cosine["early"], cosine["late"], cosine["ratio"]) == (200., 500., 0.4)
-    assert pulls(None, 70., "tracking")["late"] == 350.
-    assert pulls(None, 70., "tracking")["ratio"] is None
-    assert pulls(0, None, None)["late"] is None
-    assert pulls(0, 1., "cosine")["ratio"] is None
+
+def test_unconfirmed_peak_keeps_early_speed():
+    rows = pd.DataFrame({"frame_index": range(7), "source_time_ms": range(0, 700, 100),
+                         "plate_cy_px": [110., 100., 80., 60., 62., 65., 70.]})
+    missing = rows.copy()
+    missing.loc[3, "plate_cy_px"] = float("nan")
+    for case in (rows.iloc[:-1], missing, rows.assign(plate_clipped=rows.frame_index == 3)):
+        pulls = coaching_summary(case, 0, 1, {}, None)["pulls"]
+        assert pulls["early"] == 100.
+        assert pulls["first_peak_frame"] is pulls["late"] is pulls["late_over_early"] is None
+        assert pulls["verdict"] == "보류" and pulls["reason"]
 
 
 def test_explicit_deployment_folder_keeps_missing_models_in_that_folder(monkeypatch, tmp_path):
