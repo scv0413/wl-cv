@@ -7,16 +7,15 @@ from time import perf_counter
 
 import cv2
 import numpy as np
-import pandas as pd
 import torch
 from ultralytics import YOLO
 
 from wlcv.config import local_path
 from wlcv.data.mp4_input import inspect_mp4, validate_events
-from wlcv.runtime.inference import load_plate_model, single_pass_frames, tracked_plate_frames
+from wlcv.runtime.inference import load_plate_model, single_pass_frames
 from wlcv.runtime.measurements import coaching_summary, measure_knee_to_contact, phase_summary
 from wlcv.runtime.models import file_models
-from wlcv.runtime.overlay import PLATE_STATES, render_frames, two_pass_frames
+from wlcv.runtime.overlay import PLATE_STATES, render_frames
 from wlcv.runtime.recovery import save_recovery_curve
 
 
@@ -77,18 +76,9 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
         folder.mkdir()
         overlay = folder / "overlay.mp4"
         video_start = perf_counter()
-        if read_mode == "two-pass":
-            observations = tracked_plate_frames(path, plate_model, device, timings,
-                                                cutmix_model=cutmix_model, plate_imgsz=plate_imgsz)
-            plates = pd.DataFrame.from_records(vars(plate) for _, _, plate in observations)
-            # 기존 두 번 읽기 시간표의 plate_pass에는 모델 준비·읽기·추론이 들어간다.
-            timings["plate_pass"] = timings.pop("plate_load") + perf_counter() - video_start - timings["plate_tracking"]
-            del timings["plate_inference"]
-            stream = two_pass_frames(path, plates, pose_model, device, timings)
-        else:
-            stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared",
-                                        timings, plate_imgsz=plate_imgsz, cutmix_model=cutmix_model,
-                                        edge_rule="continuity")
+        stream = single_pass_frames(path, plate_model, pose_model, device, read_mode == "single-shared",
+                                    timings, plate_imgsz=plate_imgsz, cutmix_model=cutmix_model,
+                                    edge_rule="continuity", reread=read_mode == "two-pass")
         contact = events.get("drive")
         has_pair = knee is not None and contact is not None
         if has_pair and knee >= contact:
