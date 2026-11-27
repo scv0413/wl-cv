@@ -1,0 +1,7 @@
+video_id,frame_index,condition,people,person,reason,pool,model,source,confidence,x1,y1,x2,y2,iou_54
+a07_sn_h_02,53,control,1,1,single,baseline:0 baseline:1 baseline:2 cutmix:0 cutmix:1 cutmix:2,baseline,high,0.9639480113983154,144.03195190429688,433.58428955078125,263.669677734375,544.0747680664062,
+a07_sn_h_02,53,containment,1,1,single,baseline:0 baseline:1 baseline:2 cutmix:0 cutmix:1 cutmix:2,baseline,high,0.9639480113983154,144.03195190429688,433.58428955078125,263.669677734375,544.0747680664062,
+a07_sn_h_02,54,control,3,0,ambiguous,,none,missing,,,,,,
+a07_sn_h_02,54,containment,3,0,ambiguous,baseline:0 baseline:1 baseline:2 cutmix:0,baseline,high,0.9620919823646545,145.23194885253906,420.75177001953125,264.9247741699219,530.2249755859375,0.9332733176628749
+a07_sn_h_02,55,control,1,1,single,baseline:0 baseline:1 cutmix:0 cutmix:1 cutmix:2,baseline,high,0.9603540301322937,142.72000122070312,406.117919921875,262.7470703125,516.4827880859375,
+a07_sn_h_02,55,containment,1,1,single,baseline:0 baseline:1 cutmix:0 cutmix:1 cutmix:2,baseline,high,0.9603540301322937,142.72000122070312,406.117919921875,262.7470703125,516.4827880859375,
