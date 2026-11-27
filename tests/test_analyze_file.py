@@ -53,6 +53,21 @@ def test_endpoint_iou_rejection_uses_both_tracking_centers():
     assert select_rise([knee, missing]) == (None, None)
 
 
+def test_coaching_ratio_uses_selected_rise_and_original_time():
+    rows = pd.DataFrame({"frame_index": [0, 1, 2], "source_time_ms": [50, 450, 650],
+                         "plate_cy_px": [180., 100., 30.]})
+    def pulls(lift, rise, source):
+        selected = {"rise_px": rise, "source": source}
+        return coaching_summary(rows, lift, 1, {"drive": 2}, None, knee_to_contact=selected)["pulls"]
+
+    cosine = pulls(0, 100., "cosine")
+    assert (cosine["early"], cosine["late"], cosine["ratio"]) == (200., 500., 0.4)
+    assert pulls(None, 70., "tracking")["late"] == 350.
+    assert pulls(None, 70., "tracking")["ratio"] is None
+    assert pulls(0, None, None)["late"] is None
+    assert pulls(0, 1., "cosine")["ratio"] is None
+
+
 def test_explicit_deployment_folder_keeps_missing_models_in_that_folder(monkeypatch, tmp_path):
     """배포 폴더에 없는 모델을 로컬 학습 폴더에서 조용히 읽지 않는다."""
     from wlcv.runtime.models import experiment_models, file_models

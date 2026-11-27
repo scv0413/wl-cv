@@ -39,10 +39,10 @@ uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --por
 | --- | --- |
 | `lift_to_knee_speed_px_s` | 이륙부터 무릎 통과까지 원판 중심의 평균 수직속도(px/s). 위로 올라가면 양수입니다. |
 | `trunk_change_deg` | 가까운 어깨와 골반을 이은 선이 이륙 때보다 무릎 통과 때 얼마나 기울었는지 나타냅니다. 음수면 몸통이 더 세워졌습니다. |
-| `knee_to_contact_speed_px_s` | 무릎 통과부터 바 접촉까지 원판 중심의 평균 수직속도(px/s). |
+| `knee_to_contact_speed_px_s` | 채택한 `knee_to_contact_rise_px` ÷ 무릎 통과부터 바 접촉까지의 원본 경과 시간(초). 이 두 시점만 있어도 계산합니다. |
 | `pull_speed_ratio` | 앞 속도 ÷ 뒤 속도. 두 구간 모두 상승했고 값이 1보다 작으면 뒤 구간이 더 빠릅니다. |
 
-두 속도는 추적한 원판 중심과 원본 영상의 프레임 시각으로 계산합니다. 체간 변화에는 이륙·무릎 통과 두 시점만 필요합니다. 값이 `null`이면 `pull_speed_reason` 또는 `trunk_change_reason`에서 시점·좌표 누락 등의 사유를 확인하세요.
+앞 구간은 추적 좌표를, 뒤 구간은 `knee_to_contact_source`에 표시된 출처의 상승량을 사용합니다. 뒤 구간 상승량이 1px 이하면 속도 비율을 보류합니다. 체간 변화에는 이륙·무릎 통과 두 시점만 필요합니다. 값이 `null`이면 `pull_speed_reason` 또는 `trunk_change_reason`에서 사유를 확인하세요.
 
 응답의 `plate_mode=cutmix`는 자동 보완을 켰다는 뜻입니다. `selected_model_counts.cutmix`는 실제로 보조 좌표를 채택한 프레임 수입니다. 베이스라인 단독 비교는 CLI의 `--plate-mode single`로 재현할 수 있습니다.
 

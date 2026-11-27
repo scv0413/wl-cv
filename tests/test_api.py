@@ -73,6 +73,25 @@ def test_saved_coaching_uses_reviewed_catch_and_original_frame_times(tmp_path, m
     asyncio.run(check())
 
 
+def test_old_summary_recomputes_late_speed_and_ratio_on_read(tmp_path, monkeypatch):
+    monkeypatch.setenv("WL_OUTPUT_DIR", str(tmp_path))
+    folder = tmp_path / "api/20261126-123456-000003"
+    folder.mkdir(parents=True)
+    summary = sample_summary("cutmix")
+    summary["manual_events"] = {"lift_off": 0, "knee_pass": 1, "drive": 2}
+    summary["coaching"] = {"pulls": {"early": 200., "late": 350., "ratio": 200 / 350}}
+    summary["knee_to_contact_rise"] = {"rise_px": 100., "source": "cosine", "reason": ""}
+    (folder / "summary.json").write_text(json.dumps(summary))
+    (folder / "frames.csv").write_text("frame_index,source_time_ms,plate_cy_px\n0,50,180\n1,450,100\n2,650,30\n")
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            data = (await client.get(f"/analyses/{folder.name}")).raise_for_status().json()
+            assert data["knee_to_contact_speed_px_s"] == 500.
+            assert data["pull_speed_ratio"] == 0.4
+    asyncio.run(check())
+
+
 def test_saving_catch_graph_works_without_a_gui(tmp_path, monkeypatch):
     import matplotlib.pyplot as plt
     import pandas as pd
@@ -123,7 +142,8 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
         summary = sample_summary(plate_mode)
         summary["manual_events"] = manual_events
         if "drive" in manual_events:
-            summary["coaching"] = {"pulls": {"early": 0., "late": 400., "ratio": 0., "reason": ""}}
+            summary["knee_to_contact_rise"] = {"rise_px": 100., "source": "cosine", "reason": ""}
+            summary["coaching"] = {"pulls": {"early": 0., "late": 400., "ratio": 0., "reason": "", "late_source": "cosine"}}
             summary["trunk_change_deg"] = -7.5
         folder = tmp_path / "api" / "20261126-123456-000001"
         folder.mkdir(parents=True, exist_ok=True)

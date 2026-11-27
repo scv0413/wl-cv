@@ -19,13 +19,20 @@ def vertical_angle(shoulder, hip):
 
 
 def vertical_speeds(time_ms, height_y):
-    """속도는 원본 px/s, 위쪽이 양수. 1 px 이하의 후반 상승량은 비율 계산을 보류한다."""
+    """수동 허브나 동일 궤적의 세 점을 비교하는 실험용 계산."""
+    return speeds_from_rises(time_ms, -np.diff(np.asarray(height_y, dtype=float)))
+
+
+def speeds_from_rises(time_ms, rise):
+    """두 구간의 상승량을 각각 원본 경과 시간으로 나눈다. 위쪽이 양수다."""
     dt = np.diff(np.asarray(time_ms, dtype=float)) / 1000
-    if len(dt) != 2 or not np.isfinite(dt).all() or (dt <= 0).any():
+    if len(dt) != 2:
         return dict(early=np.nan, late=np.nan, ratio=np.nan, reason="시각 확인 필요")
-    rise = -np.diff(np.asarray(height_y, dtype=float))
-    early, late = rise / dt
-    if not np.isfinite(rise).all():
+    valid_time = np.isfinite(dt) & (dt > 0)
+    early, late = np.divide(rise, dt, out=np.full(2, np.nan), where=valid_time)
+    if not valid_time.all():
+        reason = "시각 확인 필요"
+    elif not np.isfinite(rise).all():
         reason = "끝점 누락"
     elif rise[1] <= 1:
         reason = "후반 상승량 1 px 이하"
@@ -83,19 +90,30 @@ def phase_summary(records, lift, knee):
     }
 
 
-def coaching_summary(rows, lift, knee, events, facing):
+def pull_summary(frames, lift, knee, contact, measurement):
+    """앞 구간은 추적 좌표, 뒤 구간은 두 끝점 검사를 거쳐 채택한 상승량을 쓴다."""
+    indices = [lift, knee, contact]
+    points = frames.reindex(indices)
+    coordinates = points.reindex(columns=["source_time_ms", "plate_cy_px"])
+    y = coordinates.plate_cy_px.to_numpy(dtype=float)
+    late_rise = y[1] - y[2] if measurement is None else measurement["rise_px"]
+    values = speeds_from_rises(coordinates.source_time_ms, np.array([y[0] - y[1], late_rise], dtype=float))
+    result = {k: float(values[k]) if np.isfinite(values[k]) else None for k in ("early", "late", "ratio")}
+    result["reason"] = "이륙·무릎 통과·접촉 중 미지정 시점이 있습니다." if None in indices else values["reason"]
+    result["late_source"] = measurement["source"] if measurement is not None else (
+        "tracking" if np.isfinite(late_rise) else None)
+    result["endpoint_frames"] = indices
+    if "plate_status" in points:
+        result["plate_states"] = points.plate_status.fillna("").tolist()
+    return result
+
+
+def coaching_summary(rows, lift, knee, events, facing, *, knee_to_contact=None):
     """원본 시각과 모델 관측으로 계산하며 측정할 수 없는 값은 JSON null로 남긴다."""
     frames = rows.set_index("frame_index", verify_integrity=True)
     result = {"units": "source px, source-video seconds", "landmarks": "model plate box center and near shoulder"}
     contact = events.get("drive")
-    if lift is not None and knee is not None and contact in frames.index and lift < knee < contact:
-        endpoints = frames.loc[[lift, knee, contact]]
-        values = vertical_speeds(endpoints.source_time_ms, endpoints.plate_cy_px)
-        result["pulls"] = {k: (float(v) if np.isfinite(v) else None) for k, v in values.items() if k != "reason"}
-        result["pulls"].update(reason=values["reason"], endpoint_frames=[int(lift), int(knee), int(contact)],
-                               plate_states=endpoints.plate_status.tolist())
-    else:
-        result["pulls"] = {"early": None, "late": None, "ratio": None, "reason": "이륙·무릎 통과·접촉 중 미지정 시점이 있습니다."}
+    result["pulls"] = pull_summary(frames, lift, knee, contact, knee_to_contact)
     catch = events.get("catch")
     result["drive_to_peak"] = drive_to_peak(frames, contact, catch)
     if catch not in frames.index:
