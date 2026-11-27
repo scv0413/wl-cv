@@ -65,11 +65,11 @@ Netron에서 두 모델의 ONNX 입출력 구조를 확인한 뒤 같은 프레�
    docker compose up --build -d api
    ```
 
-3. [로컬 Swagger](http://127.0.0.1:8001/docs)에서 **POST /analyses → Try it out** 선택. MP4와 카메라에 가까운 **선수 자신의 좌우**(`near_side`), 선수가 보는 **화면의 좌우**(`facing`) 입력. 시점을 비우면 `ready`·`transition`을 자동 제안. `pull_review_url`에서 장면을 확인하고 구간 평균속도와 뒤/앞 비율을 다시 계산.
+3. [로컬 Swagger](http://127.0.0.1:8001/docs)에서 **영상 분석 → MP4 한 편 분석 → Try it out** 선택. MP4와 카메라에 가까운 **선수 자신의 좌우**(`near_side`), 선수가 보는 **화면의 좌우**(`facing`) 입력. 시점을 비우면 `ready`·`transition`을 자동 제안. `pull_review_url`에서 장면을 확인하고 구간 평균속도와 뒤/앞 비율을 다시 계산.
 4. **Execute** 후 응답의 `files`에서 영상·CSV 확인. 캐치·피니시는 `recovery_review_url`에서 사후 선택해 어깨 기준 원판 위치와 체간 기울기 그래프 생성 가능. 기본 저장 위치는 `outputs/docker_analysis/api/`, 종료 명령은 `docker compose down`.
 
 ### Docker 없이 실행하기
 
-Docker 없이 실행할 때는 [FastAPI 서버](docs/fastapi.md) 또는 [파일 경로 CLI](docs/analyze_mp4.md) 사용. API는 CutMix 자동 보완이 기본이며 CLI에서는 `--plate-mode cutmix`로 선택.
+[개발 환경 준비](docs/fastapi.md#서버-시작) 후 프로젝트 루트의 가상환경에서 `fastapi dev` 실행. 브라우저에 [개발 서버 Swagger](http://127.0.0.1:8000/docs)가 열리며, **시점 검수**에서 기존 분석의 속도 재계산 또는 캐치·피니시 그래프 생성 가능. 터미널에서 영상 경로를 입력하는 방법은 [파일 경로 CLI](docs/analyze_mp4.md) 참고. API는 CutMix 자동 보완이 기본이며 CLI에서는 `--plate-mode cutmix`로 선택.
 
 **코드 시작점** · [FastAPI](wlcv/api/app.py) · [영상 분석 파이프라인](wlcv/runtime/pipeline.py) · [라벨링·실험 노트북](notebooks/README.md) · [수동 라벨](data/annotations/) · [선수별 분할](data/splits/)

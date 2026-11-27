@@ -27,7 +27,15 @@ from wlcv.runtime.pull_review import review_status
 from wlcv.runtime.pipeline import analyze_file
 
 
-app = FastAPI(title="스내치 영상 분석", version="0.2.0", description="측면 MP4 한 편에서 원판과 가까운 쪽 관절을 추적합니다.")
+app = FastAPI(
+    title="스내치 영상 분석",
+    version="0.2.0",
+    description="측면 MP4 한 편에서 원판과 가까운 쪽 관절을 추적합니다. 처음에는 **MP4 한 편 분석**을 실행하세요.",
+    openapi_tags=[
+        {"name": "영상 분석", "description": "영상을 제출하거나 저장된 분석의 요약과 결과 파일을 엽니다."},
+        {"name": "시점 검수", "description": "분석 후 시점을 수정할 때 사용합니다. 원본 영상을 다시 제출할 필요가 없습니다."},
+    ],
+)
 # 한 프로세스에서 동시에 여러 영상의 모델을 메모리에 올리지 않는다.
 analysis_lock = Lock()
 Side = Literal["left", "right"]
@@ -41,7 +49,7 @@ Frame = Annotated[
 FrameValue = NonNegativeInt | Literal[""] | None
 ReadyFrame = Annotated[FrameValue, Form(examples=[""], description="원판이 바닥에서 올라가기 시작하는 프레임. 첫 프레임은 0번입니다.")]
 TransitionFrame = Annotated[FrameValue, Form(examples=[""], description="원판 중심이 가까운 쪽 무릎 높이를 통과하는 프레임.")]
-DriveFrame = Annotated[FrameValue, Form(examples=[""], description="바와 몸이 닿는 프레임.")]
+DriveFrame = Annotated[FrameValue, Form(examples=[""], description="바와 몸이 닿는 프레임. 접촉 관련 추가 측정을 원할 때만 입력하세요.")]
 LegacyFrame = Annotated[SkipJsonSchema[FrameValue], Form()]
 PHASE_NAMES = {"lift_off": "ready", "knee_pass": "transition", "drive": "drive"}
 
@@ -125,8 +133,8 @@ class AnalysisResult(BaseModel):
     drive_to_peak: DriveToPeak
     summary_url: str
     pull_review: PullReview | None = None
-    pull_review_url: str | None = None
-    recovery_review_url: str
+    pull_review_url: str | None = Field(default=None, description="프레임을 보며 ready와 transition을 수정하는 화면 주소.")
+    recovery_review_url: str = Field(description="오버레이를 보며 catch와 finish를 선택해 그래프를 만드는 화면 주소.")
     catch_to_finish: dict | None
     files: dict[str, str]
 
@@ -209,14 +217,12 @@ def public_result(request, folder, summary):
 
 
 @app.post(
-    "/analyses", status_code=201, summary="MP4 한 편 분석",
+    "/analyses", status_code=201, tags=["영상 분석"], summary="MP4 한 편 분석",
     description=(
-        "원판 추적이 끊기면 CutMix로 자동 보완합니다. "
-        "ready와 transition을 비우면 자동으로 찾은 시점으로 바로 계산합니다. 수정이 필요한 시점만 pull_review_url에서 바꿀 수 있습니다. "
-        "두 구간의 평균 수직속도는 ready → transition, transition → 첫 상승 최고점입니다. "
-        "drive와 catch를 비워도 계산합니다. 첫 상승 뒤 세 프레임의 하강이 확인되지 않으면 후반 속도와 비율은 null입니다. "
-        "drive와 catch를 입력하면 drive_to_peak에서 상승량·최고점 프레임·평균속도와 ±1프레임 속도 범위를 볼 수 있습니다. "
-        "Execute 후 Response body에서 측정값을 확인하세요. 첫 프레임은 0이며 모르는 시점은 빈칸으로 두세요."
+        "MP4와 촬영 방향을 입력하세요. ready와 transition을 비우면 자동으로 찾아 "
+        "ready → transition과 transition → 첫 상승 최고점의 평균 수직속도 및 뒤/앞 비율을 계산합니다. "
+        "최고점을 확인할 수 없으면 후반 속도와 비율은 null입니다. "
+        "결과의 `files`에서 오버레이와 CSV를 열 수 있습니다."
     ),
 )
 def create_analysis(
@@ -269,7 +275,7 @@ def saved_summary(folder):
     return json.loads(summary.read_text(encoding="utf-8"))
 
 
-@app.get("/analyses/{analysis_id}", summary="저장된 분석 요약")
+@app.get("/analyses/{analysis_id}", tags=["영상 분석"], summary="저장된 분석 요약 조회")
 def get_result(request: Request, analysis_id: AnalysisId) -> AnalysisResult:
     folder = output_root() / analysis_id
     return public_result(request, folder, saved_summary(folder))
@@ -282,14 +288,14 @@ def reviewable_summary(folder):
     return summary
 
 
-@app.get("/analyses/{analysis_id}/pull-review", response_class=HTMLResponse, summary="당기기 구간 검수 화면")
+@app.get("/analyses/{analysis_id}/pull-review", response_class=HTMLResponse, include_in_schema=False)
 def review_pulls(request: Request, analysis_id: AnalysisId):
     folder = output_root() / analysis_id
     summary = reviewable_summary(folder)
     return pull_page(public_result(request, folder, summary))
 
 
-@app.get("/analyses/{analysis_id}/pull-review/frames/{frame}", response_class=Response, summary="검수할 오버레이 한 프레임")
+@app.get("/analyses/{analysis_id}/pull-review/frames/{frame}", response_class=Response, include_in_schema=False)
 def get_pull_frame(analysis_id: AnalysisId, frame: NonNegativeInt):
     folder = output_root() / analysis_id
     summary = reviewable_summary(folder)
@@ -298,10 +304,10 @@ def get_pull_frame(analysis_id: AnalysisId, frame: NonNegativeInt):
     return Response(reviewed_frame(folder, frame), media_type="image/jpeg")
 
 
-@app.post("/analyses/{analysis_id}/pull-review", summary="당기기 시점 확인 및 구간 평균속도 재계산")
+@app.post("/analyses/{analysis_id}/pull-review", tags=["시점 검수"], summary="ready·transition 수정 및 평균속도 재계산")
 def confirm_pulls(request: Request, analysis_id: AnalysisId,
-                  drive: DriveFrame = None,
                   ready: ReadyFrame = None, transition: TransitionFrame = None,
+                  drive: LegacyFrame = None,
                   lift_off: LegacyFrame = None, knee_pass: LegacyFrame = None) -> AnalysisResult:
     folder = output_root() / analysis_id
     lift_off = frame_alias("ready", ready, lift_off)
@@ -320,7 +326,7 @@ def confirm_pulls(request: Request, analysis_id: AnalysisId,
         raise HTTPException(422, str(error)) from error
 
 
-@app.get("/analyses/{analysis_id}/catch-to-finish", response_class=HTMLResponse, summary="캐치·피니시 판독 화면")
+@app.get("/analyses/{analysis_id}/catch-to-finish", response_class=HTMLResponse, include_in_schema=False)
 def review_recovery(request: Request, analysis_id: AnalysisId):
     folder = output_root() / analysis_id
     summary = saved_summary(folder)
@@ -334,7 +340,7 @@ def review_recovery(request: Request, analysis_id: AnalysisId):
                        has_chart=chart_path(folder, review).is_file())
 
 
-@app.post("/analyses/{analysis_id}/catch-to-finish", summary="저장된 CSV로 캐치·피니시 그래프 만들기")
+@app.post("/analyses/{analysis_id}/catch-to-finish", tags=["시점 검수"], summary="catch·finish 지정 및 어깨 기준 원판 위치 그래프 생성")
 def save_review(request: Request, analysis_id: AnalysisId, catch: Annotated[NonNegativeInt, Form()],
                 finish: Annotated[NonNegativeInt, Form()]) -> AnalysisResult:
     folder = output_root() / analysis_id
@@ -348,7 +354,7 @@ def save_review(request: Request, analysis_id: AnalysisId, catch: Annotated[NonN
         raise HTTPException(422, str(error)) from error
 
 
-@app.get("/analyses/{analysis_id}/files/{filename}", response_class=FileResponse, summary="분석 결과 파일 열기")
+@app.get("/analyses/{analysis_id}/files/{filename}", tags=["영상 분석"], response_class=FileResponse, summary="결과 파일 열기")
 def download_result(analysis_id: AnalysisId, filename: Artifact):
     folder = output_root() / analysis_id
     path = chart_path(folder, current_review(folder)) if filename == "catch_to_finish.png" else folder / filename
