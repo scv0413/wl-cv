@@ -15,18 +15,19 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, NonNegativeInt
 from pydantic.json_schema import SkipJsonSchema
 
-from wlcv.api.pull_review import reviewed_frame, save_pull_review
+from wlcv.api.pull_review import add_saved_clipping, reviewed_frame, save_pull_review
 from wlcv.api.pull_page import pull_page
 from wlcv.api.recovery_review import chart_path, create_review, current_review
 from wlcv.api.review_page import review_page
 from wlcv.config import local_path
 from wlcv.data.mp4_input import VideoInputError
 from wlcv.runtime.apex import drive_to_peak
-from wlcv.runtime.measurements import pull_summary, speed_verdict
+from wlcv.runtime.measurements import first_peak_speeds
+from wlcv.runtime.pull_review import review_status
 from wlcv.runtime.pipeline import analyze_file
 
 
-app = FastAPI(title="스내치 영상 분석", description="측면 MP4 한 편에서 원판과 가까운 쪽 관절을 추적합니다.")
+app = FastAPI(title="스내치 영상 분석", version="0.2.0", description="측면 MP4 한 편에서 원판과 가까운 쪽 관절을 추적합니다.")
 # 한 프로세스에서 동시에 여러 영상의 모델을 메모리에 올리지 않는다.
 analysis_lock = Lock()
 Side = Literal["left", "right"]
@@ -38,9 +39,9 @@ Frame = Annotated[
     Form(examples=[""], description="선택 사항입니다. 시점을 모르면 빈칸으로 두세요. 0은 영상의 첫 프레임입니다."),
 ]
 FrameValue = NonNegativeInt | Literal[""] | None
-ReadyFrame = Annotated[FrameValue, Form(examples=[""], description="이륙 · 원판이 바닥에서 올라가기 시작하는 프레임. 첫 프레임은 0번입니다.")]
-TransitionFrame = Annotated[FrameValue, Form(examples=[""], description="무릎 통과 · 원판 중심이 가까운 쪽 무릎 높이를 통과하는 프레임.")]
-DriveFrame = Annotated[FrameValue, Form(examples=[""], description="접촉 · 바와 몸이 닿는 프레임.")]
+ReadyFrame = Annotated[FrameValue, Form(examples=[""], description="원판이 바닥에서 올라가기 시작하는 프레임. 첫 프레임은 0번입니다.")]
+TransitionFrame = Annotated[FrameValue, Form(examples=[""], description="원판 중심이 가까운 쪽 무릎 높이를 통과하는 프레임.")]
+DriveFrame = Annotated[FrameValue, Form(examples=[""], description="바와 몸이 닿는 프레임.")]
 LegacyFrame = Annotated[SkipJsonSchema[FrameValue], Form()]
 PHASE_NAMES = {"lift_off": "ready", "knee_pass": "transition", "drive": "drive"}
 
@@ -59,6 +60,7 @@ def public_pull_review(review):
     result = dict(review)
     for field in ("suggested", "events", "sources", "reasons"):
         result[field] = {PHASE_NAMES[k]: v for k, v in review[field].items()}
+    result["status"] = review_status(review["sources"])
     return result
 
 
@@ -70,29 +72,28 @@ class DriveToPeak(BaseModel):
     status: Literal["산출", "산출 보류"]
     drive_frame: int | None
     catch_frame: int | None
-    peak_frame: int | None = Field(description="접촉부터 캐치 직전까지 원판 중심이 가장 높았던 첫 프레임(0부터).")
-    rise_px: float | None = Field(description="접촉부터 관측 최고점까지의 수직 상승량(px).")
-    elapsed_s: float | None = Field(description="접촉부터 관측 최고점까지의 원본 경과 시간(s).")
+    peak_frame: int | None = Field(description="drive부터 catch 직전까지 원판 중심이 가장 높았던 첫 프레임(0부터).")
+    rise_px: float | None = Field(description="drive부터 관측 최고점까지의 수직 상승량(px).")
+    elapsed_s: float | None = Field(description="drive부터 관측 최고점까지의 원본 경과 시간(s).")
     mean_speed_px_s: float | None = Field(description="상승량을 경과 시간으로 나눈 평균 수직속도(px/s).")
     speed_range_px_s: tuple[float, float] | None = Field(description="최고점의 전·해당·다음 프레임을 각각 끝으로 계산한 평균속도의 [최솟값, 최댓값](px/s).")
-    missing_frames: int | None = Field(description="접촉부터 캐치 직전까지 원판 좌표가 없는 프레임 수.")
+    missing_frames: int | None = Field(description="drive부터 catch 직전까지 원판 좌표가 없는 프레임 수.")
     reason: str
     range_reason: str
 
 
 class PullSpeedRange(BaseModel):
-    early_speed_px_s: tuple[float, float] = Field(description="이륙→무릎 통과 평균 수직속도 범위(px/s)")
-    late_speed_px_s: tuple[float, float] = Field(description="무릎 통과→접촉 평균 수직속도 범위(px/s)")
-    early_over_late: tuple[float, float] = Field(description="앞/뒤 속도 비율의 최솟값과 최댓값")
+    early_speed_px_s: tuple[float, float] = Field(description="ready → transition 평균 수직속도 범위(px/s)")
+    late_speed_px_s: tuple[float, float] = Field(description="transition → 첫 상승 최고점 평균 수직속도 범위(px/s)")
     late_over_early: tuple[float, float] = Field(description="판정에 쓰는 뒤/앞 속도 비율의 최솟값과 최댓값")
 
 
 class PullReview(BaseModel):
-    suggested: dict[str, int | None] = Field(description="이륙·무릎 통과·접촉 자동 후보. 판독 보류는 null입니다.")
+    suggested: dict[str, int | None] = Field(description="ready, transition, drive의 자동 후보. 판독 보류는 null입니다.")
     reasons: dict[str, str]
     events: dict[str, int] = Field(description="현재 코칭 계산에 사용한 시점.")
     sources: dict[str, Literal["automatic", "manual", "reviewed"]]
-    status: Literal["needs_review", "confirmed"] = Field(description="접촉 확인 전에는 코칭 수치가 잠정값입니다.")
+    status: Literal["needs_review", "confirmed"] = Field(description="시점의 수동 확인 여부입니다. 자동 시점으로 계산한 결과도 바로 사용할 수 있습니다.")
 
 
 class AnalysisResult(BaseModel):
@@ -109,16 +110,17 @@ class AnalysisResult(BaseModel):
     knee_to_contact_rise_px: float | None
     knee_to_contact_source: str | None
     knee_to_contact_reason: str
-    lift_to_knee_speed_px_s: float | None = Field(description="이륙 → 무릎 통과의 원판 평균 수직속도(px/s). 위쪽이 양수입니다.")
-    trunk_change_deg: float | None = Field(description="무릎 통과 때의 체간 기울기에서 이륙 때의 기울기를 뺀 값(°). 음수면 몸통이 더 세워졌습니다.")
+    lift_to_knee_speed_px_s: float | None = Field(description="ready → transition 구간의 원판 평균 수직속도(px/s). 위쪽이 양수입니다.")
+    trunk_change_deg: float | None = Field(description="transition에서 측정한 체간 기울기에서 ready에서 측정한 기울기를 뺀 값(°). 음수면 몸통이 더 세워졌습니다.")
     trunk_change_reason: str = Field(description="체간 변화량을 표시할 수 없는 이유. 측정되면 빈 문자열입니다.")
-    knee_to_contact_speed_px_s: float | None = Field(description="채택한 knee_to_contact_rise_px를 무릎 통과 → 접촉의 원본 경과 시간으로 나눈 평균 수직속도(px/s).")
-    pull_speed_ratio: float | None = Field(description="앞 구간 평균 수직속도 ÷ 뒤 구간 평균 수직속도. 두 구간 모두 상승할 때 1보다 작으면 뒤 구간이 더 빠릅니다.")
+    first_peak_frame: int | None = Field(description="transition 이후 원판이 처음 상승했다가 세 프레임 연속 내려오기 직전의 프레임 번호(0부터).")
+    transition_to_first_peak_speed_px_s: float | None = Field(description="transition부터 첫 상승 최고점까지 추적 중심의 평균 수직속도(px/s). 최고점 미확인 시 null.")
+    pull_speed_ratio: float | None = Field(description="후반 평균 수직속도 ÷ 전반 평균 수직속도. 1보다 크면 후반이 더 빠릅니다.")
     pull_speed_late_over_early: float | None = Field(description="입력 시점에서 뒤 평균속도 ÷ 앞 평균속도. 두 구간 모두 상승할 때 계산합니다.")
     pull_speed_verdict: Literal["느림", "비슷", "빠름", "보류"] = Field(description="뒤/앞이 0.90 미만이면 느림, 1.10 초과면 빠름, 경곗값을 포함한 그 사이는 비슷입니다.")
     pull_speed_evaluated_shifts: int | None = Field(description="판정 가능한 ±1프레임 변경 수(0~4). 예전 분석에서 검사하지 않았으면 null입니다.")
     pull_speed_range: PullSpeedRange | None = Field(default=None, exclude_if=lambda value: value is None,
-        description="무릎 통과·접촉 중 하나를 한 프레임 옮겨 판정이 바뀔 때만 표시합니다. 입력 시점과 판독 가능한 이동의 최솟값·최댓값입니다.")
+        description="transition 또는 첫 상승 최고점을 한 프레임 옮겨 판정이 바뀔 때만 표시합니다. 입력 시점과 판독 가능한 이동의 최솟값·최댓값입니다.")
     pull_speed_reason: str = Field(description="구간 속도 또는 비율을 표시할 수 없는 이유. 모두 측정되면 빈 문자열입니다.")
     drive_to_peak: DriveToPeak
     summary_url: str
@@ -137,8 +139,9 @@ def saved_measurement_frames(folder):
     """이전 분석과 캐치 재판독에는 영상 재추론 없이 원본 시각과 좌표를 읽는다."""
     path = folder / "frames.csv"
     if path.is_file():
-        columns = {"frame_index", "source_time_ms", "plate_cy_px"}
+        columns = {"frame_index", "source_time_ms", "plate_cy_px", "plate_clipped", "plate_x1", "plate_y1", "plate_x2", "plate_y2"}
         data = pd.read_csv(path, usecols=columns.__contains__)
+        add_saved_clipping(data, folder)
         if "frame_index" in data:
             return data.set_index("frame_index")
     return pd.DataFrame()
@@ -154,9 +157,9 @@ def public_result(request, folder, summary):
     trunk_reason = ""
     if trunk_change is None:
         if events.get("lift_off") is None or events.get("knee_pass") is None:
-            trunk_reason = "이륙 또는 무릎 통과 시점 미지정"
+            trunk_reason = "ready 또는 transition 시점 미지정"
         else:
-            trunk_reason = "이륙 또는 무릎 통과에서 가까운 쪽 어깨·골반의 기울기 측정 불가"
+            trunk_reason = "ready 또는 transition에서 가까운 쪽 어깨·골반의 기울기 측정 불가"
     counts = summary["plate_counts"].copy()
     counts["좌표 누락"] = counts.pop("미탐")  # 새 영상에는 수동 정답이 없다.
     review = current_review(folder)
@@ -164,15 +167,16 @@ def public_result(request, folder, summary):
     lift, knee, drive = events.get("lift_off"), events.get("knee_pass"), events.get("drive")
     peak = coaching.get("drive_to_peak")
     update_peak = peak is None or (peak["drive_frame"], peak["catch_frame"]) != (drive, catch)
-    update_pulls = "late_source" not in pulls and knee is not None and (drive is not None or lift is not None)
+    # 예전 요약의 후반 속도는 drive에서 끝났다. 저장한 궤적으로 현재 구간을 다시 계산한다.
+    update_pulls = "first_peak_frame" not in pulls
     frames = None
     if update_pulls or (update_peak and drive is not None and catch is not None):
         frames = saved_measurement_frames(folder)
     if update_pulls:
-        previous_early = pulls.get("early")
-        pulls = pull_summary(frames, lift, knee, drive, rise)
-        if frames.empty and previous_early is not None:
-            pulls["early"] = previous_early
+        old_early = pulls.get("early")
+        pulls = first_peak_speeds(frames, lift, knee)
+        if pulls["early"] is None and old_early is not None and not {"plate_cy_px", "source_time_ms"}.issubset(frames):
+            pulls["early"] = old_early
     if update_peak:
         peak = drive_to_peak(frames, drive, catch)
     files = {}
@@ -181,7 +185,6 @@ def public_result(request, folder, summary):
         if path.is_file():
             files[filename] = request.url_for("download_result", analysis_id=folder.name, filename=filename).path
 
-    factor, verdict = speed_verdict(pulls.get("early"), pulls.get("late"), pulls.get("ratio"))
     return AnalysisResult(
         analysis_id=folder.name, frame_count=summary["frame_count"], near_side=summary["near_side"],
         facing=summary["facing"], plate_mode=summary["plate_mode"], plate_counts=counts,
@@ -191,8 +194,9 @@ def public_result(request, folder, summary):
         knee_to_contact_rise_px=rise["rise_px"], knee_to_contact_source=rise["source"],
         knee_to_contact_reason=rise["reason"], lift_to_knee_speed_px_s=pulls.get("early"),
         trunk_change_deg=trunk_change, trunk_change_reason=trunk_reason,
-        knee_to_contact_speed_px_s=pulls.get("late"), pull_speed_ratio=pulls.get("ratio"),
-        pull_speed_late_over_early=factor, pull_speed_verdict=verdict,
+        first_peak_frame=pulls["first_peak_frame"], transition_to_first_peak_speed_px_s=pulls["late"],
+        pull_speed_ratio=pulls["late_over_early"], pull_speed_late_over_early=pulls["late_over_early"],
+        pull_speed_verdict=pulls["verdict"],
         pull_speed_evaluated_shifts=pulls.get("evaluated_shifts"), pull_speed_range=pulls.get("sensitivity_range"),
         pull_speed_reason=pulls.get("reason", "저장된 분석에 구간 속도 기록 없음"),
         drive_to_peak=peak,
@@ -208,10 +212,10 @@ def public_result(request, folder, summary):
     "/analyses", status_code=201, summary="MP4 한 편 분석",
     description=(
         "원판 추적이 끊기면 CutMix로 자동 보완합니다. "
-        "ready(이륙), transition(무릎 통과), drive(접촉)를 비우면 세 시점 후보를 제안합니다. pull_review_url을 열어 접촉을 확인하거나 "
-        "세 시점을 수정하면 평균 수직속도와 뒤/앞 비율을 다시 계산합니다. 직접 입력한 시점이 우선합니다. "
-        "무릎 통과 또는 접촉을 ±1프레임 옮겨 뒤/앞 속도 판정이 바뀌면 pull_speed_range도 표시합니다. "
-        "접촉과 캐치(catch)를 입력하면 drive_to_peak에서 상승량·최고점 프레임·평균속도와 ±1프레임 속도 범위를 볼 수 있습니다. "
+        "ready와 transition을 비우면 자동으로 찾은 시점으로 바로 계산합니다. 수정이 필요한 시점만 pull_review_url에서 바꿀 수 있습니다. "
+        "두 구간의 평균 수직속도는 ready → transition, transition → 첫 상승 최고점입니다. "
+        "drive와 catch를 비워도 계산합니다. 첫 상승 뒤 세 프레임의 하강이 확인되지 않으면 후반 속도와 비율은 null입니다. "
+        "drive와 catch를 입력하면 drive_to_peak에서 상승량·최고점 프레임·평균속도와 ±1프레임 속도 범위를 볼 수 있습니다. "
         "Execute 후 Response body에서 측정값을 확인하세요. 첫 프레임은 0이며 모르는 시점은 빈칸으로 두세요."
     ),
 )
@@ -278,7 +282,7 @@ def reviewable_summary(folder):
     return summary
 
 
-@app.get("/analyses/{analysis_id}/pull-review", response_class=HTMLResponse, summary="이륙·무릎 통과·접촉 검수 화면")
+@app.get("/analyses/{analysis_id}/pull-review", response_class=HTMLResponse, summary="당기기 구간 검수 화면")
 def review_pulls(request: Request, analysis_id: AnalysisId):
     folder = output_root() / analysis_id
     summary = reviewable_summary(folder)
@@ -294,16 +298,18 @@ def get_pull_frame(analysis_id: AnalysisId, frame: NonNegativeInt):
     return Response(reviewed_frame(folder, frame), media_type="image/jpeg")
 
 
-@app.post("/analyses/{analysis_id}/pull-review", summary="접촉 확인 및 구간 평균속도 재계산")
+@app.post("/analyses/{analysis_id}/pull-review", summary="당기기 시점 확인 및 구간 평균속도 재계산")
 def confirm_pulls(request: Request, analysis_id: AnalysisId,
-                  drive: Annotated[NonNegativeInt, Form(description="접촉 · 바와 몸이 닿는 것으로 확인한 프레임.")],
+                  drive: DriveFrame = None,
                   ready: ReadyFrame = None, transition: TransitionFrame = None,
                   lift_off: LegacyFrame = None, knee_pass: LegacyFrame = None) -> AnalysisResult:
     folder = output_root() / analysis_id
     lift_off = frame_alias("ready", ready, lift_off)
     knee_pass = frame_alias("transition", transition, knee_pass)
-    edits = {"drive": drive}
-    edits.update({k: v for k, v in (("lift_off", lift_off), ("knee_pass", knee_pass)) if v not in (None, "")})
+    edits = {k: v for k, v in (("lift_off", lift_off), ("knee_pass", knee_pass), ("drive", drive))
+             if v not in (None, "")}
+    if not edits:
+        raise HTTPException(422, "확인한 시점의 프레임 번호를 입력하세요.")
     reviewable_summary(folder)
     try:
         with analysis_lock, FileLock(str(folder / ".review.lock")):

@@ -37,7 +37,7 @@ def test_saved_result_exposes_measurements_and_only_result_files(tmp_path, monke
             assert result["plate_counts"]["좌표 누락"] == 1
             assert result["lift_to_knee_rise_px"] is None
             assert result["lift_to_knee_speed_px_s"] is None
-            assert result["pull_speed_reason"] == "저장된 분석에 구간 속도 기록 없음"
+            assert result["pull_speed_reason"] and result["transition_to_first_peak_speed_px_s"] is None
             assert result["drive_to_peak"]["status"] == "산출 보류"
             assert result["drive_to_peak"]["peak_frame"] is None
             assert "시점 미지정" in result["trunk_change_reason"]
@@ -82,15 +82,16 @@ def test_old_summary_recomputes_late_speed_and_ratio_on_read(tmp_path, monkeypat
     summary["coaching"] = {"pulls": {"early": 200., "late": 350., "ratio": 200 / 350}}
     summary["knee_to_contact_rise"] = {"rise_px": 100., "source": "cosine", "reason": ""}
     (folder / "summary.json").write_text(json.dumps(summary))
-    (folder / "frames.csv").write_text("frame_index,source_time_ms,plate_cy_px\n0,50,180\n1,450,100\n2,650,30\n")
+    (folder / "frames.csv").write_text("frame_index,source_time_ms,plate_cy_px\n0,50,140\n1,450,100\n2,650,30\n3,850,20\n4,950,23\n5,1050,26\n6,1150,28\n")
 
     async def check():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             data = (await client.get(f"/analyses/{folder.name}")).raise_for_status().json()
-            assert data["knee_to_contact_speed_px_s"] == 500.
-            assert data["pull_speed_ratio"] == 0.4
-            assert data["pull_speed_late_over_early"] == 2.5 and data["pull_speed_verdict"] == "빠름"
-            assert data["pull_speed_evaluated_shifts"] is None and "pull_speed_range" not in data
+            assert data["first_peak_frame"] == 3
+            assert data["lift_to_knee_speed_px_s"] == 100.
+            assert data["transition_to_first_peak_speed_px_s"] == 200.
+            assert data["pull_speed_ratio"] == data["pull_speed_late_over_early"] == 2.
+            assert data["pull_speed_verdict"] == "빠름"
     asyncio.run(check())
 
 
@@ -183,10 +184,11 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
                 assert response.json()["manual_events"] == events
                 if "drive" in events:
                     metrics = response.json()
-                    assert metrics["lift_to_knee_speed_px_s"] == metrics["pull_speed_ratio"] == 0.
-                    assert metrics["knee_to_contact_speed_px_s"] == 400.
+                    assert metrics["lift_to_knee_speed_px_s"] == 0.
+                    assert metrics["pull_speed_ratio"] is None
+                    assert metrics["transition_to_first_peak_speed_px_s"] is None
                     assert metrics["trunk_change_deg"] == -7.5
-                    assert metrics["trunk_change_reason"] == metrics["pull_speed_reason"] == ""
+                    assert metrics["trunk_change_reason"] == "" and metrics["pull_speed_reason"]
                     assert (await client.get(metrics["summary_url"])).json() == metrics
 
     asyncio.run(check())
@@ -217,10 +219,13 @@ def test_pull_review_updates_only_selected_events_and_preserves_the_original(tmp
         assert saved["pull_review"]["events"] == {"ready": 0, "transition": 2, "drive": 5}
         assert saved["pull_review"]["suggested"] == {"ready": 0, "transition": 2, "drive": 4}
         assert saved["pull_review"]["sources"]["transition"] == "automatic"
-        assert saved["pull_review"]["status"] == "confirmed"
+        assert saved["pull_review"]["status"] == "needs_review"
         assert saved["lift_to_knee_speed_px_s"] == 100.
-        assert saved["knee_to_contact_speed_px_s"] == 150.
-        assert saved["pull_speed_late_over_early"] == 1.5
+        assert saved["first_peak_frame"] is saved["transition_to_first_peak_speed_px_s"] is None
+        assert saved["pull_speed_late_over_early"] is None
         assert client.post(url, data={"transition": 5, "drive": 5}).status_code == 422
         assert client.post(url, data={"ready": 1, "lift_off": 0, "drive": 5}).status_code == 422
         assert client.get(saved["summary_url"]).json() == saved
+        checked = client.post(url, data={"ready": 0, "transition": 2}).raise_for_status().json()
+        assert checked["pull_review"]["status"] == "confirmed"
+        assert checked["pull_speed_verdict"] == "보류"

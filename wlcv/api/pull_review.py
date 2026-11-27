@@ -27,6 +27,21 @@ def reviewed_frame(folder, frame):
         capture.release()
 
 
+def add_saved_clipping(data, folder):
+    """같은 과거 궤적을 조회하거나 재검수할 때 화면 경계도 같은 기준으로 복원한다."""
+    if "plate_clipped" not in data and {"plate_x1", "plate_y1", "plate_x2", "plate_y2"}.issubset(data):
+        data["plate_clipped"] = (data.plate_x1 <= 0) | (data.plate_y1 <= 0)
+        if (folder / "overlay.mp4").is_file():
+            capture = cv2.VideoCapture(str(folder / "overlay.mp4"))
+            try:
+                width = capture.get(cv2.CAP_PROP_FRAME_WIDTH)
+                height = capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                if width > 0 and height > 0:
+                    data["plate_clipped"] |= (data.plate_x2 >= width - 1) | (data.plate_y2 >= height - 1)
+            finally:
+                capture.release()
+
+
 def save_pull_review(folder, summary, updates):
     events = dict(summary["manual_events"])
     recovery = current_review(folder)
@@ -35,6 +50,7 @@ def save_pull_review(folder, summary, updates):
     review = revised_review(summary["pull_review"], updates, events, summary["frame_count"])
     events.update(review["events"])
     rows = pd.read_csv(folder / "frames.csv")
+    add_saved_clipping(rows, folder)
     points = json.loads((folder / "pull_endpoints.json").read_text())
     checks = {point["frame_index"]: point for point in points}
     direction = {"left": -1, "right": 1}[summary["facing"]]

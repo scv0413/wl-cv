@@ -154,6 +154,8 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
                 "plate_confidence": plate.confidence, "plate_cx_px": plate.cx, "plate_cy_px": plate.cy,
                 "plate_x1": plate.x1, "plate_y1": plate.y1,
                 "plate_x2": plate.x2, "plate_y2": plate.y2, **pose,
+                "plate_clipped": bool(plate.x1 <= 0 or plate.y1 <= 0 or
+                                      plate.x2 >= info.width - 1 or plate.y2 >= info.height - 1),
             })
             if hasattr(plate, "selected_model"):
                 records[-1]["selected_model"] = plate.selected_model

@@ -52,3 +52,34 @@ def drive_to_peak(frames, drive, catch):
     else:
         result["range_reason"] = "최고점 앞뒤 한 프레임의 구간 속도를 모두 계산할 수 없습니다."
     return result
+
+
+def first_rise_peak(frames, transition):
+    """두 번 연속 올라간 궤적에서 세 번 연속 내려온 첫 꼭대기를 찾는다."""
+    if transition is None:
+        return None, "transition 시점 미지정"
+    if transition not in frames.index or not {"plate_cy_px", "source_time_ms"}.issubset(frames):
+        return None, "transition 원판 좌표 또는 원본 시각 없음"
+    path = frames.loc[transition:]
+    heights = path.plate_cy_px.to_numpy(dtype=float)
+    times = path.source_time_ms.to_numpy(dtype=float)
+    clipped = path["plate_clipped"].to_numpy() if "plate_clipped" in path else None
+    rising = falling = 0
+    observed_rise = False
+    for i, (frame, y, ms) in enumerate(zip(path.index, heights, times)):
+        if frame != transition + i or not np.isfinite(y):
+            return None, "첫 상승 최고점 확인 전 원판 궤적이 끊김"
+        if clipped is not None and clipped[i]:
+            return None, "첫 상승 최고점 확인 전 원판 박스가 화면 경계에 닿음"
+        if not np.isfinite(ms) or (i and ms <= times[i - 1]):
+            return None, "첫 상승 구간의 원본 시각 확인 필요"
+        if i == 0:
+            continue
+        rising = rising + 1 if y < heights[i - 1] else 0
+        observed_rise = observed_rise or rising >= 2
+        falling = falling + 1 if y > heights[i - 1] else 0
+        if observed_rise and falling == 3:
+            if heights[i - 3] >= heights[0]:
+                return None, "transition보다 높은 첫 상승 최고점을 확인할 수 없음"
+            return int(frame - 3), ""
+    return None, "첫 상승 뒤 3프레임 연속 하강을 확인할 수 없음"

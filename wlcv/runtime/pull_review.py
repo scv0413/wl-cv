@@ -30,7 +30,7 @@ def initial_review(rows, manual):
     for key in PULL_KEYS:
         if key in manual:
             sources[key] = "manual"
-        elif suggested[key] is not None:
+        elif key != "drive" and suggested[key] is not None:
             trial = {**effective, key: suggested[key]}
             try:
                 validate_events(trial, len(rows))
@@ -41,22 +41,28 @@ def initial_review(rows, manual):
                 sources[key] = "automatic"
     selected = {key: effective[key] for key in PULL_KEYS if key in effective}
     return {"suggested": suggested, "reasons": reasons, "events": selected, "sources": sources,
-            "status": "confirmed" if len(selected) == 3 and "drive" in manual else "needs_review"}
+            "status": review_status(sources)}
+
+
+def review_status(sources):
+    checked = all(sources.get(k) in ("manual", "reviewed") for k in ("lift_off", "knee_pass"))
+    return "confirmed" if checked else "needs_review"
 
 
 def revised_review(previous, updates, other_events, count):
     events = {**previous["events"], **updates}
-    if any(key not in events for key in PULL_KEYS):
-        raise VideoInputError("후보가 없는 시점을 직접 입력하세요. 이륙·무릎 통과·접촉 세 시점이 필요합니다.")
+    if previous["sources"].get("drive") == "automatic" and "drive" not in updates:
+        events.pop("drive", None)
     validate_events({**other_events, **events}, count)
     sources = {**previous["sources"], **dict.fromkeys(updates, "reviewed")}
-    return {**previous, "events": events, "sources": sources, "status": "confirmed"}
+    sources = {k: sources[k] for k in events}
+    return {**previous, "events": events, "sources": sources, "status": review_status(sources)}
 
 
 def reviewed_metrics(rows, events, checks, cosine_weights, direction):
     lift, knee, drive = (events.get(key) for key in PULL_KEYS)
     rise = knee_contact_measurement(knee, drive, checks, cosine_weights)
-    coaching = coaching_summary(rows, lift, knee, events, direction, knee_to_contact=rise, endpoint_checks=checks)
+    coaching = coaching_summary(rows, lift, knee, events, direction)
     angles = rows.set_index("frame_index").trunk_angle_deg.reindex([lift, knee])
     change = float(angles.iloc[1] - angles.iloc[0]) if angles.notna().all() else None
     return {"knee_to_contact_rise": rise, "manual_phase_interval": phase_summary(rows, lift, knee),

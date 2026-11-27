@@ -4,7 +4,7 @@ from math import atan2, degrees
 import numpy as np
 import pandas as pd
 
-from wlcv.runtime.apex import drive_to_peak
+from wlcv.runtime.apex import drive_to_peak, first_rise_peak
 from wlcv.runtime.inference import detect_endpoint
 from wlcv.runtime.tracking import BOX, iou
 
@@ -102,15 +102,6 @@ def speed_verdict(early, late, ratio):
     return factor, "비슷"
 
 
-def shifted_pull_events(lift, knee, contact, events):
-    """이륙은 고정한다. 다른 수동 시점과 순서가 겹치는 이동은 제외한다."""
-    if None in (lift, knee, contact):
-        return []
-    next_event = events.get("catch") if events.get("catch") is not None else events.get("finish")
-    pairs = [(knee - 1, contact), (knee + 1, contact), (knee, contact - 1), (knee, contact + 1)]
-    return [(k, c) for k, c in pairs if lift < k < c and (next_event is None or c < next_event)]
-
-
 def pull_summary(frames, lift, knee, contact, measurement):
     """앞 구간은 추적 좌표, 뒤 구간은 두 끝점 검사를 거쳐 채택한 상승량을 쓴다."""
     indices = [lift, knee, contact]
@@ -130,26 +121,43 @@ def pull_summary(frames, lift, knee, contact, measurement):
     return result
 
 
-def compare_pull_boundaries(frames, lift, shifts, checks, baseline):
-    """범위는 기준과 계산 가능한 이동을 모두 포함하며 판정이 갈릴 때만 표시한다."""
-    alternatives = []
-    if baseline["verdict"] != "보류":
-        for k, c in shifts:
-            if k not in checks or c not in checks:
-                continue
-            source, rise = select_rise([checks[k], checks[c]])
-            score = pull_summary(frames, lift, k, c, {"source": source, "rise_px": rise})
-            if score["verdict"] != "보류":
-                alternatives.append(score)
+def speed_sensitivity(baseline, alternatives):
     result = {"evaluated_shifts": len(alternatives)}
     if any(score["verdict"] != baseline["verdict"] for score in alternatives):
         scores = [baseline, *alternatives]
         bounds = {}
         for field, key in (("early", "early_speed_px_s"), ("late", "late_speed_px_s"),
-                           ("ratio", "early_over_late"), ("late_over_early", "late_over_early")):
+                           ("late_over_early", "late_over_early")):
             values = [score[field] for score in scores]
             bounds[key] = [min(values), max(values)]
         result["sensitivity_range"] = bounds
+    return result
+
+
+def first_peak_speeds(frames, ready, transition):
+    """ready와 transition은 선택한 시점, 세 번째 끝점은 같은 추적 궤적의 첫 최고점이다."""
+    peak, reason = first_rise_peak(frames, transition)
+    result = pull_summary(frames, ready, transition, peak, None)
+    result["first_peak_frame"] = peak
+    result["ratio"] = result["late_over_early"]
+    if reason:
+        result["reason"] = reason
+    elif ready is None:
+        result["reason"] = "ready 시점 미지정"
+    elif result["late_over_early"] is None and not result["reason"]:
+        result["reason"] = "두 구간이 모두 상승해야 속도 비율을 계산할 수 있습니다."
+
+    alternatives = []
+    if result["verdict"] != "보류":
+        for shift in (-1, 1):
+            moved = transition + shift
+            if ready < moved < peak:
+                other_peak, _ = first_rise_peak(frames, moved)
+                if other_peak is not None:
+                    alternatives.append(pull_summary(frames, ready, moved, other_peak, None))
+            if transition < peak + shift:
+                alternatives.append(pull_summary(frames, ready, transition, peak + shift, None))
+    result.update(speed_sensitivity(result, [a for a in alternatives if a["verdict"] != "보류"]))
     return result
 
 
@@ -158,10 +166,7 @@ def coaching_summary(rows, lift, knee, events, facing, *, knee_to_contact=None, 
     frames = rows.set_index("frame_index", verify_integrity=True)
     result = {"units": "source px, source-video seconds", "landmarks": "model plate box center and near shoulder"}
     contact = events.get("drive")
-    result["pulls"] = pull_summary(frames, lift, knee, contact, knee_to_contact)
-    if endpoint_checks is not None:
-        shifts = shifted_pull_events(lift, knee, contact, events)
-        result["pulls"].update(compare_pull_boundaries(frames, lift, shifts, endpoint_checks, result["pulls"]))
+    result["pulls"] = first_peak_speeds(frames, lift, knee)
     catch = events.get("catch")
     result["drive_to_peak"] = drive_to_peak(frames, contact, catch)
     if catch not in frames.index:
