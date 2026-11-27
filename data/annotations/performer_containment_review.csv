@@ -1,0 +1,17 @@
+video_id,frame_index,small,large,visual_verdict,source,reference_person_box
+a03_sn_f_01,25,1,2,같은 선수,assistant_visual_review,yes
+a03_sn_f_01,105,1,2,같은 선수,assistant_visual_review,no
+a03_sn_f_01,107,1,2,같은 선수,assistant_visual_review,no
+a03_sn_f_01,108,2,1,같은 선수,assistant_visual_review,no
+a05_sn_f_01,22,2,1,같은 선수,assistant_visual_review,yes
+a05_sn_f_01,23,2,1,같은 선수,assistant_visual_review,yes
+b02_sn_h_02,17,1,2,같은 선수,assistant_visual_review,no
+b02_sn_h_02,18,1,2,같은 선수,assistant_visual_review,no
+b02_sn_h_02,30,1,2,같은 선수,assistant_visual_review,yes
+b02_sn_h_02,31,2,1,같은 선수,assistant_visual_review,yes
+b02_sn_h_02,32,2,1,같은 선수,assistant_visual_review,yes
+b02_sn_h_02,33,2,1,같은 선수,assistant_visual_review,yes
+b02_sn_h_02,34,1,2,같은 선수,assistant_visual_review,yes
+b03_sn_f_01,17,1,2,같은 선수,assistant_visual_review,yes
+c08_sn_f_01,20,1,2,같은 선수,assistant_visual_review,yes
+c08_sn_f_01,21,2,1,같은 선수,assistant_visual_review,yes
