@@ -6,7 +6,7 @@ import numpy as np
 from wlcv.runtime.tracking import iou
 
 
-def select_performer(boxes, previous):
+def select_performer(boxes, previous, *, area_ratio=1.25):
     """후보 번호는 0부터 센다. 크기가 비슷할 때는 직전 선수와 겹치는지 확인한다."""
     if len(boxes) == 0:
         return None, "missing"
@@ -20,21 +20,21 @@ def select_performer(boxes, previous):
     if previous is not None and iou(boxes[first], boxes[second]) >= .50:
         overlaps = np.array([iou(box, previous) for box in boxes])
         best, runner_up = np.argsort(-overlaps, kind="stable")[:2]
-        in_front = iou(boxes[best], boxes[first]) >= .50 or sizes[best] * 1.25 >= sizes[first]
+        in_front = iou(boxes[best], boxes[first]) >= .50 or sizes[best] * area_ratio >= sizes[first]
         if in_front and overlaps[best] >= .50 and overlaps[best] - overlaps[runner_up] >= .10:
             return int(best), "previous_box"
         return None, "ambiguous"
-    if sizes[first] >= 1.25 * sizes[second]:
+    if sizes[first] >= area_ratio * sizes[second]:
         return int(first), "foreground_size"
     if previous is not None:
-        comparable = [i for i in ranked if 1.25 * sizes[i] >= sizes[first]]
+        comparable = [i for i in ranked if area_ratio * sizes[i] >= sizes[first]]
         linked = [i for i in comparable if iou(boxes[i], previous) >= .50]
         if len(linked) == 1:
             return int(linked[0]), "previous_box"
     return None, "ambiguous"
 
 
-def performer_plates(candidates, people, selected):
+def performer_plates(candidates, people, selected, *, margin=.15):
     """다인 장면에서 선수 옆·머리 위 원판은 허용하고 다른 사람 쪽 원판은 거른다."""
     if len(people) < 2 or candidates.empty:
         return candidates
@@ -53,8 +53,8 @@ def performer_plates(candidates, people, selected):
     keep = np.ones(len(candidates), dtype=bool)
     for x1, y1, x2, y2 in targets:
         # 원판이 사람 박스 밖으로 나오는 캐치와 바닥 출발 자세의 여유 폭.
-        pad_x = (x2 - x1) * .15
-        pad_y = (y2 - y1) * .15
+        pad_x = (x2 - x1) * margin
+        pad_y = (y2 - y1) * margin
         keep &= cx.between(x1 - pad_x - rx, x2 + pad_x + rx)
         keep &= cy.between(y1 - pad_y - ry, y2 + pad_y + ry)
     return candidates.loc[keep]
