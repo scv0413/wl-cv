@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParameter
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel, NonNegativeInt
+from pydantic import BaseModel, Field, NonNegativeInt
 from pydantic.json_schema import SkipJsonSchema
 
 from wlcv.api.recovery_review import chart_path, create_review, current_review
@@ -49,7 +49,12 @@ class AnalysisResult(BaseModel):
     knee_to_contact_rise_px: float | None
     knee_to_contact_source: str | None
     knee_to_contact_reason: str
-    trunk_change_deg: float | None
+    lift_to_knee_speed_px_s: float | None = Field(description="이륙 → 무릎 통과의 원판 평균 수직속도(px/s). 위쪽이 양수입니다.")
+    trunk_change_deg: float | None = Field(description="무릎 통과 때의 체간 기울기에서 이륙 때의 기울기를 뺀 값(°). 음수면 몸통이 더 세워졌습니다.")
+    trunk_change_reason: str = Field(description="체간 변화량을 표시할 수 없는 이유. 측정되면 빈 문자열입니다.")
+    knee_to_contact_speed_px_s: float | None = Field(description="무릎 통과 → 바와 몸의 접촉까지 원판 평균 수직속도(px/s). 위쪽이 양수입니다.")
+    pull_speed_ratio: float | None = Field(description="앞 구간 평균 수직속도 ÷ 뒤 구간 평균 수직속도. 두 구간 모두 상승할 때 1보다 작으면 뒤 구간이 더 빠릅니다.")
+    pull_speed_reason: str = Field(description="구간 속도 또는 비율을 표시할 수 없는 이유. 모두 측정되면 빈 문자열입니다.")
     summary_url: str
     recovery_review_url: str
     catch_to_finish: dict | None
@@ -62,6 +67,16 @@ def output_root():
 
 def public_result(request, folder, summary):
     rise = summary["knee_to_contact_rise"]
+    coaching = summary.get("coaching", {})
+    pulls = coaching.get("pulls", {})
+    events = summary["manual_events"]
+    trunk_change = summary.get("trunk_change_deg")
+    trunk_reason = ""
+    if trunk_change is None:
+        if events.get("lift_off") is None or events.get("knee_pass") is None:
+            trunk_reason = "이륙 또는 무릎 통과 시점 미지정"
+        else:
+            trunk_reason = "이륙 또는 무릎 통과에서 가까운 쪽 어깨·골반의 기울기 측정 불가"
     counts = summary["plate_counts"].copy()
     counts["좌표 누락"] = counts.pop("미탐")  # 새 영상에는 수동 정답이 없다.
     review = current_review(folder)
@@ -74,20 +89,28 @@ def public_result(request, folder, summary):
     return AnalysisResult(
         analysis_id=folder.name, frame_count=summary["frame_count"], near_side=summary["near_side"],
         facing=summary["facing"], plate_mode=summary["plate_mode"], plate_counts=counts,
-        selected_model_counts=summary["selected_model_counts"], manual_events=summary["manual_events"],
+        selected_model_counts=summary["selected_model_counts"], manual_events=events,
         inference_backends=summary.get("inference_backends", {}),
         lift_to_knee_rise_px=summary["manual_phase_interval"]["rise_px"],
         knee_to_contact_rise_px=rise["rise_px"], knee_to_contact_source=rise["source"],
-        knee_to_contact_reason=rise["reason"], trunk_change_deg=summary["trunk_change_deg"],
+        knee_to_contact_reason=rise["reason"], lift_to_knee_speed_px_s=pulls.get("early"),
+        trunk_change_deg=trunk_change, trunk_change_reason=trunk_reason,
+        knee_to_contact_speed_px_s=pulls.get("late"), pull_speed_ratio=pulls.get("ratio"),
+        pull_speed_reason=pulls.get("reason", "저장된 분석에 구간 속도 기록 없음"),
         summary_url=request.url_for("get_result", analysis_id=folder.name).path, files=files,
         recovery_review_url=request.url_for("review_recovery", analysis_id=folder.name).path,
-        catch_to_finish=review or summary.get("coaching", {}).get("catch_to_finish"),
+        catch_to_finish=review or coaching.get("catch_to_finish"),
     )
 
 
 @app.post(
     "/analyses", status_code=201, summary="MP4 한 편 분석",
-    description="베이스라인이 직접 검출과 시간 연결로도 원판을 찾지 못한 프레임만 CutMix로 자동 보완합니다.",
+    description=(
+        "원판 추적이 끊기면 CutMix로 자동 보완합니다. "
+        "두 구간의 평균 수직속도(px/s)를 보려면 이륙(lift_off), 무릎 통과(knee_pass), "
+        "바와 몸의 접촉(drive) 프레임을 입력하세요. 이륙·무릎 통과만 지정해도 체간 기울기 변화(°)를 확인할 수 있습니다. "
+        "Execute 후 Response body에서 측정값을 확인하세요. 첫 프레임은 0이며 모르는 시점은 빈칸으로 두세요."
+    ),
 )
 def create_analysis(
     request: Request,

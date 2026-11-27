@@ -36,6 +36,9 @@ def test_saved_result_exposes_measurements_and_only_result_files(tmp_path, monke
             result = response.json()
             assert result["plate_counts"]["좌표 누락"] == 1
             assert result["lift_to_knee_rise_px"] is None
+            assert result["lift_to_knee_speed_px_s"] is None
+            assert result["pull_speed_reason"] == "저장된 분석에 구간 속도 기록 없음"
+            assert "시점 미지정" in result["trunk_change_reason"]
             csv = await client.get(result["files"]["frames.csv"])
             assert csv.text == (folder / "frames.csv").read_text()
             assert (await client.get(url + "/files/summary.json")).status_code == 422
@@ -93,8 +96,15 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
     def fake_analysis(path, *, plate_mode, manual_events, **options):
         summary = sample_summary(plate_mode)
         summary["manual_events"] = manual_events
-        return tmp_path / "20261126-123456-000001", summary
+        if "drive" in manual_events:
+            summary["coaching"] = {"pulls": {"early": 0., "late": 400., "ratio": 0., "reason": ""}}
+            summary["trunk_change_deg"] = -7.5
+        folder = tmp_path / "api" / "20261126-123456-000001"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "summary.json").write_text(json.dumps(summary))
+        return folder, summary
 
+    monkeypatch.setenv("WL_OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr("wlcv.api.app.analyze_file", fake_analysis)
     schema = app.openapi()
     upload = schema["paths"]["/analyses"]["post"]["requestBody"]["content"]["multipart/form-data"]
@@ -111,6 +121,7 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
                 ({}, "cutmix", {}),
                 (dict.fromkeys(frames, ""), "cutmix", {}),
                 ({"plate_mode": "single", "lift_off": "0"}, "single", {"lift_off": 0}),
+                ({"lift_off": "0", "knee_pass": "1", "drive": "2"}, "cutmix", {"lift_off": 0, "knee_pass": 1, "drive": 2}),
             ]
             for extra, expected, events in cases:
                 response = await client.post(
@@ -120,5 +131,12 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
                 assert response.status_code == 201
                 assert response.json()["plate_mode"] == expected
                 assert response.json()["manual_events"] == events
+                if "drive" in events:
+                    metrics = response.json()
+                    assert metrics["lift_to_knee_speed_px_s"] == metrics["pull_speed_ratio"] == 0.
+                    assert metrics["knee_to_contact_speed_px_s"] == 400.
+                    assert metrics["trunk_change_deg"] == -7.5
+                    assert metrics["trunk_change_reason"] == metrics["pull_speed_reason"] == ""
+                    assert (await client.get(metrics["summary_url"])).json() == metrics
 
     asyncio.run(check())
