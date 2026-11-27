@@ -27,36 +27,36 @@ uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --por
 | --- | --- |
 | `POST /analyses` | 완료 시 201, 분석 ID·요약·파일 링크. `Location` 헤더로도 요약 주소를 확인합니다. |
 | `GET /analyses/{analysis_id}` | 저장된 요약과 파일 링크 |
-| `GET /analyses/{analysis_id}/pull-review` | 세 시점 후보를 프레임별로 확인하는 화면 |
+| `GET /analyses/{analysis_id}/pull-review` | ready와 transition의 적용값을 확인하고 수정하는 화면 |
 | `POST /analyses/{analysis_id}/pull-review` | 선택한 시점으로 속도와 비율을 다시 계산 |
 | `GET /analyses/{analysis_id}/catch-to-finish` | 오버레이를 보며 캐치와 피니시를 선택하는 화면 |
 | `POST /analyses/{analysis_id}/catch-to-finish` | 선택한 두 시점과 저장된 CSV로 그래프를 만들고 측정 가능한 프레임 수 반환 |
 | `GET /analyses/{analysis_id}/files/{filename}` | 오버레이 MP4, 프레임 CSV 또는 생성된 캐치→피니시 PNG |
 
-### 당기기 시점 제안과 접촉 검수
+### 당기기 시점 제안과 검수
 
-1. Swagger의 **POST /analyses**에서 MP4와 촬영 방향을 보내고 `ready`(이륙)·`transition`(무릎 통과)·`drive`(접촉)를 비워 둡니다. 모델이 영상 처음부터 찾은 후보와 근거가 `pull_review.suggested`, `reasons`에 표시됩니다. 원판의 연속 상승과 무릎·상부 허벅지 높이 통과를 사용합니다. 접촉 후보는 실제 바와 몸의 접촉을 사람이 확인해야 합니다.
-2. 같은 서버에서 응답의 **`pull_review_url`**을 엽니다. 접촉 후보 장면에서 이전·다음 장으로 이동할 수 있습니다. 장면을 바꾸면 **지금 보는 프레임 사용**을 누릅니다. 이륙·무릎 통과도 고칠 수 있고, 비어 있는 후보는 직접 채울 수 있습니다.
-3. **접촉 확인 · 다시 계산**을 누르면 선택한 시점의 두 구간 평균 수직속도(px/s), 뒤/앞 비율과 판정이 표시됩니다. 검수 전은 잠정 결과입니다. 확인 후에는 같은 분석 ID를 다시 조회해도 결과가 유지됩니다. ±1프레임에서 판정이 달라지면 범위도 표시됩니다.
-4. Swagger에서도 **POST /analyses/{analysis_id}/pull-review**에 `drive`만 보내 후보를 확인하거나 고칠 수 있습니다. `ready`·`transition` 생략 시 현재 선택을 사용합니다. 저장된 선택은 `pull_review.events`, 자동·직접 입력·검수 출처는 `sources`에서 확인합니다. 검수 화면과 `pull_review`는 `ready`, `transition`, `drive`를 씁니다. 업로드 당시 기록인 `manual_events`와 예전 클라이언트에서는 `lift_off`와 `knee_pass`도 지원합니다. 여기서 `ready`는 속도 계산의 이륙 프레임입니다.
-
-업로드 중 원판을 추적한 프레임의 코사인 끝점 검사 결과를 숫자로 저장하므로 재검수 때 원본 재업로드나 모델 재실행이 필요하지 않습니다. 이 처리는 초기 업로드의 추론 시간을 늘립니다. 이전 버전으로 처리한 영상은 새로 제출하면 검수할 수 있습니다.
+1. **POST /analyses**에 MP4와 촬영 방향을 입력합니다. ready·transition을 비우면 자동으로 찾은 시점으로 구간 속도와 뒤/앞 비율을 바로 계산합니다. 찾지 못한 시점은 빈칸이고, 그 시점이 필요한 수치는 산출 보류입니다.
+2. 결과가 맞으면 그대로 사용합니다. 수정하려면 `pull_review_url`에서 해당 프레임 번호를 바꾸거나 **지금 보는 프레임 사용**을 누른 뒤 **수정한 시점으로 다시 계산**을 선택합니다.
+3. 수정한 항목만 사용자 저장으로 표시합니다. 예를 들어 transition만 바꾸면 ready는 자동 적용으로 남습니다. Swagger에서도 **POST /analyses/{analysis_id}/pull-review**에 바꿀 항목만 보낼 수 있습니다.
 
 ### Swagger에서 속도와 체간 기울기 읽기
 
-`ready`(이륙), `transition`(무릎 통과), `drive`(바와 몸의 접촉)를 입력한 뒤 **Execute → Response body**를 봅니다. 저장한 분석은 **GET /analyses/{analysis_id}**에서 같은 값을 다시 볼 수 있습니다.
+**Execute → Response body**에서 기본 코칭 수치를 읽습니다. 두 속도와 비율에는 drive·catch 입력이 필요하지 않습니다. 저장된 분석은 **GET /analyses/{analysis_id}**에서 확인합니다.
 
 | 응답 필드 | 읽는 방법 |
 | --- | --- |
 | `lift_to_knee_speed_px_s` | 이륙부터 무릎 통과까지 원판 중심의 평균 수직속도(px/s). 위로 올라가면 양수입니다. |
 | `trunk_change_deg` | 가까운 어깨와 골반을 이은 선이 이륙 때보다 무릎 통과 때 얼마나 기울었는지 나타냅니다. 음수면 몸통이 더 세워졌습니다. |
-| `knee_to_contact_speed_px_s` | 채택한 `knee_to_contact_rise_px` ÷ 무릎 통과부터 바 접촉까지의 원본 경과 시간(초). 이 두 시점만 있어도 계산합니다. |
-| `pull_speed_ratio` | 앞 속도 ÷ 뒤 속도. 두 구간 모두 상승했고 값이 1보다 작으면 뒤 구간이 더 빠릅니다. |
+| `first_peak_frame` | transition 이후 두 번 연속 올라간 원판이 세 번 연속 내려가기 직전 프레임. 미확인 시 null. |
+| `transition_to_first_peak_speed_px_s` | transition부터 첫 상승 최고점까지 원판 중심의 평균 수직속도(px/s). 하강을 확인한 세 프레임은 계산 시간에서 제외합니다. |
+| `pull_speed_ratio` | 후반 평균 수직속도 ÷ 전반 평균 수직속도. `pull_speed_late_over_early`와 같은 값입니다. |
 | `pull_speed_late_over_early` · `pull_speed_verdict` | 뒤 속도 ÷ 앞 속도. 0.90 미만은 느림, 0.90~1.10은 비슷, 1.10 초과는 빠름입니다. 양쪽 상승 속도를 비교할 수 없으면 판정을 보류합니다. |
-| `pull_speed_evaluated_shifts` | 무릎 통과 또는 접촉 하나만 ±1프레임 옮긴 네 조건 중 계산 가능한 수. 예전 분석에 이 검사가 없으면 `null`입니다. |
-| `pull_speed_range` | 판정이 바뀔 때만 응답에 포함합니다. 입력한 이륙을 고정하고, 기준과 계산 가능한 변경에서 나온 두 평균속도와 두 방향 속도 비율의 최솟값·최댓값을 보여줍니다. |
+| `pull_speed_evaluated_shifts` | transition 또는 첫 상승 최고점 하나만 ±1프레임 옮긴 네 조건 중 계산 가능한 수. 예전 분석에 이 검사가 없으면 `null`입니다. |
+| `pull_speed_range` | 판정이 바뀔 때만 응답에 포함합니다. 입력한 이륙을 고정하고, 기준과 계산 가능한 변경에서 나온 두 평균속도와 뒤/앞 속도 비율의 최솟값·최댓값을 보여줍니다. |
 
-앞 구간은 추적 좌표를, 뒤 구간은 `knee_to_contact_source`에 표시된 출처의 상승량을 사용합니다. 뒤 구간 상승량이 1px 이하면 속도 비율을 보류합니다. 체간 변화에는 이륙·무릎 통과 두 시점만 필요합니다. 값이 `null`이면 `pull_speed_reason` 또는 `trunk_change_reason`에서 사유를 확인하세요.
+API 0.2에서 `pull_speed_ratio`는 **뒤/앞**으로 바뀌었습니다. 이전 응답은 **앞/뒤**였고 후반도 바 접촉에서 끝났습니다. 기존 클라이언트는 후반 속도 필드를 `knee_to_contact_speed_px_s`에서 `transition_to_first_peak_speed_px_s`로 바꿔야 합니다. 예전 분석을 조회하면 저장된 궤적과 원본 시각으로 새 정의의 값을 다시 계산합니다.
+
+첫 상승이 끝나기 전에 영상이 끝나거나 원판 좌표가 끊기거나 박스가 화면 경계에 닿으면 후반 속도와 뒤/앞 비율은 `null`입니다. 측정 가능한 전반 속도는 표시합니다.
 
 응답의 `plate_mode=cutmix`는 자동 보완을 켰다는 뜻입니다. `selected_model_counts.cutmix`는 실제로 보조 좌표를 채택한 프레임 수입니다. 베이스라인 단독 비교는 CLI의 `--plate-mode single`로 재현할 수 있습니다.
 
