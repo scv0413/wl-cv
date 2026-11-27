@@ -66,6 +66,17 @@ def main():
         print(f"이륙→무릎 {pulls['early']:.2f} px/s · 무릎→접촉 {pulls['late']:.2f} px/s · 앞/뒤 {pulls['ratio']:.3f}")
     else:
         print("속도 비율 보류 ·", pulls["reason"])
+    peak = summary["coaching"]["drive_to_peak"]
+    if peak["peak_frame"] is None:
+        print("접촉→최고점 산출 보류 ·", peak["reason"])
+    else:
+        print(f"접촉→최고점 {peak['peak_frame']}번 · 상승량 {peak['rise_px']:.2f} px · "
+              f"평균 수직속도 {peak['mean_speed_px_s']:,.0f} px/s")
+        bounds = peak["speed_range_px_s"]
+        if bounds is None:
+            print("±1프레임 범위 보류 ·", peak["range_reason"])
+        else:
+            print(f"±1프레임 속도 범위 {bounds[0]:,.0f}~{bounds[1]:,.0f} px/s")
     catch = summary["coaching"]["catch"]
     if catch.get("forward_px") is not None:
         print(f"캐치 바−어깨 · 앞 {catch['forward_px']:+.2f} px · 위 {catch['up_px']:+.2f} px (모델)")

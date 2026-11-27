@@ -25,6 +25,20 @@ def test_manual_finish_must_be_inside_decoded_frames():
         validate_events({"lift_off": 3, "finish": 2})
 
 
+def test_peak_uses_source_time_and_excludes_catch_from_search_and_range():
+    from wlcv.runtime.apex import drive_to_peak
+
+    frames = pd.DataFrame({"plate_cy_px": [100., 80., 70., 71., 40.],
+                           "source_time_ms": [20., 60., 120., 220., 245.]})
+    peak = drive_to_peak(frames, 0, 4)
+    assert peak["peak_frame"] == 2 and peak["rise_px"] == 30
+    assert peak["mean_speed_px_s"] == pytest.approx(300)
+    assert peak["speed_range_px_s"] == pytest.approx([145, 500])
+    boundary = drive_to_peak(frames, 0, 3)
+    assert boundary["peak_frame"] == 2 and boundary["speed_range_px_s"] is None
+    assert boundary["range_reason"]
+
+
 def test_endpoint_iou_rejection_uses_both_tracking_centers():
     import numpy as np
     from wlcv.evaluation.plate_endpoint_rise import check_endpoint, select_rise
