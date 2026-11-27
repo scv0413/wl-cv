@@ -38,11 +38,37 @@ def test_saved_result_exposes_measurements_and_only_result_files(tmp_path, monke
             assert result["lift_to_knee_rise_px"] is None
             assert result["lift_to_knee_speed_px_s"] is None
             assert result["pull_speed_reason"] == "저장된 분석에 구간 속도 기록 없음"
+            assert result["drive_to_peak"]["status"] == "산출 보류"
+            assert result["drive_to_peak"]["peak_frame"] is None
             assert "시점 미지정" in result["trunk_change_reason"]
             csv = await client.get(result["files"]["frames.csv"])
             assert csv.text == (folder / "frames.csv").read_text()
             assert (await client.get(url + "/files/summary.json")).status_code == 422
             assert (await client.get(url + "/files/catch_to_finish.png")).status_code == 404
+
+    asyncio.run(check())
+
+
+def test_saved_coaching_uses_reviewed_catch_and_original_frame_times(tmp_path, monkeypatch):
+    monkeypatch.setenv("WL_OUTPUT_DIR", str(tmp_path))
+    folder = tmp_path / "api/20261126-123456-000002"
+    folder.mkdir(parents=True)
+    summary = {**sample_summary("cutmix"), "frame_count": 6, "manual_events": {"drive": 0}}
+    (folder / "summary.json").write_text(json.dumps(summary))
+    (folder / "frames.csv").write_text("frame_index,source_time_ms,plate_cy_px,forward_px,trunk_angle_deg\n"
+                                       "0,0,100,0,8\n1,50,80,0,7\n2,100,60,0,6\n"
+                                       "3,160,64,0,5\n4,200,42,0,4\n5,250,41,0,3\n")
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            url = f"/analyses/{folder.name}"
+            before = (await client.get(url)).raise_for_status().json()["drive_to_peak"]
+            assert before["reason"] == "캐치 시점 미지정"
+            response = await client.post(url + "/catch-to-finish", data={"catch": 4, "finish": 5})
+            peak = response.raise_for_status().json()["drive_to_peak"]
+            assert (peak["peak_frame"], peak["rise_px"], peak["mean_speed_px_s"]) == (2, 40., 400.)
+            assert peak["speed_range_px_s"] == [225., 400.]
+            assert (await client.get(url)).json()["drive_to_peak"] == peak
 
     asyncio.run(check())
 

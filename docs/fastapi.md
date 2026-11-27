@@ -48,6 +48,12 @@ uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --por
 
 `plate_counts`는 직접 검출·시간 연결·좌표 누락을 셉니다. 새 영상은 수동 정답이 없어 정확도·오탐률을 채점할 수 없습니다. `lift_to_knee_rise_px`는 이륙→무릎 통과, `knee_to_contact_rise_px`는 무릎 통과→접촉 상승량입니다. 수동 시점이나 좌표가 빠져 계산할 수 없으면 값은 `null`입니다. 후자의 측정 출처와 보류 이유도 함께 반환합니다.
 
+### 접촉부터 원판 최고점까지
+
+`drive`와 `catch`를 입력하면 Swagger 응답의 `drive_to_peak`와 로컬 `summary.json`의 `coaching.drive_to_peak`에서 같은 지표를 볼 수 있습니다. 접촉 프레임부터 캐치 바로 전까지 추적한 원판 중심이 가장 높은 첫 프레임이 `peak_frame`입니다. `rise_px`는 접촉 이후 더 올라간 높이이고, `mean_speed_px_s`는 이 높이를 원본 경과 시간 `elapsed_s`로 나눈 값입니다.
+
+`speed_range_px_s`는 종료점을 최고점의 직전·해당·직후로 바꿔 계산한 세 평균속도의 최솟값과 최댓값입니다. 양옆을 모두 계산할 수 없으면 범위는 `null`이고 `range_reason`에 이유가 표시됩니다. 캐치 시점이 없으면 `status`는 ‘산출 보류’입니다. `missing_frames`로 구간 중 원판 관측이 빠진 장수를 확인할 수 있습니다. 캐치를 다시 판독해 저장하면 API는 그 시점으로 다시 계산합니다.
+
 ## 분석 후 캐치·피니시 그래프 만들기
 
 1. 완료 응답의 `recovery_review_url`을 같은 서버에서 엽니다. 이전 분석도 ID로 요약을 다시 조회하면 이 경로가 표시됩니다.

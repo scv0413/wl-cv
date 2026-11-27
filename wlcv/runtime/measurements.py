@@ -4,6 +4,7 @@ from math import atan2, degrees
 import numpy as np
 import pandas as pd
 
+from wlcv.runtime.apex import drive_to_peak
 from wlcv.runtime.inference import detect_endpoint
 from wlcv.runtime.tracking import BOX, iou
 
@@ -96,6 +97,7 @@ def coaching_summary(rows, lift, knee, events, facing):
     else:
         result["pulls"] = {"early": None, "late": None, "ratio": None, "reason": "이륙·무릎 통과·접촉 중 미지정 시점이 있습니다."}
     catch = events.get("catch")
+    result["drive_to_peak"] = drive_to_peak(frames, contact, catch)
     if catch not in frames.index:
         result["catch"] = {"forward_px": None, "up_px": None, "reason": "캐치 시점 미지정"}
         return result
