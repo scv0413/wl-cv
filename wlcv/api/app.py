@@ -19,6 +19,7 @@ from wlcv.api.review_page import review_page
 from wlcv.config import local_path
 from wlcv.data.mp4_input import VideoInputError
 from wlcv.runtime.apex import drive_to_peak
+from wlcv.runtime.measurements import pull_summary
 from wlcv.runtime.pipeline import analyze_file
 
 
@@ -68,7 +69,7 @@ class AnalysisResult(BaseModel):
     lift_to_knee_speed_px_s: float | None = Field(description="이륙 → 무릎 통과의 원판 평균 수직속도(px/s). 위쪽이 양수입니다.")
     trunk_change_deg: float | None = Field(description="무릎 통과 때의 체간 기울기에서 이륙 때의 기울기를 뺀 값(°). 음수면 몸통이 더 세워졌습니다.")
     trunk_change_reason: str = Field(description="체간 변화량을 표시할 수 없는 이유. 측정되면 빈 문자열입니다.")
-    knee_to_contact_speed_px_s: float | None = Field(description="무릎 통과 → 바와 몸의 접촉까지 원판 평균 수직속도(px/s). 위쪽이 양수입니다.")
+    knee_to_contact_speed_px_s: float | None = Field(description="채택한 knee_to_contact_rise_px를 무릎 통과 → 접촉의 원본 경과 시간으로 나눈 평균 수직속도(px/s).")
     pull_speed_ratio: float | None = Field(description="앞 구간 평균 수직속도 ÷ 뒤 구간 평균 수직속도. 두 구간 모두 상승할 때 1보다 작으면 뒤 구간이 더 빠릅니다.")
     pull_speed_reason: str = Field(description="구간 속도 또는 비율을 표시할 수 없는 이유. 모두 측정되면 빈 문자열입니다.")
     drive_to_peak: DriveToPeak
@@ -82,18 +83,15 @@ def output_root():
     return local_path("WL_OUTPUT_DIR", "outputs/file_analysis") / "api"
 
 
-def reviewed_peak(folder, saved, drive, catch):
-    """최신 캐치 판독이나 이전 버전 결과에는 저장한 프레임 CSV를 사용한다."""
-    if saved is not None and (saved["drive_frame"], saved["catch_frame"]) == (drive, catch):
-        return saved
-    frames = None
+def saved_measurement_frames(folder):
+    """이전 분석과 캐치 재판독에는 영상 재추론 없이 원본 시각과 좌표를 읽는다."""
     path = folder / "frames.csv"
-    if drive is not None and catch is not None and path.is_file():
+    if path.is_file():
         columns = {"frame_index", "source_time_ms", "plate_cy_px"}
         data = pd.read_csv(path, usecols=columns.__contains__)
         if "frame_index" in data:
-            frames = data.set_index("frame_index")
-    return drive_to_peak(frames, drive, catch)
+            return data.set_index("frame_index")
+    return pd.DataFrame()
 
 
 def public_result(request, folder, summary):
@@ -112,6 +110,20 @@ def public_result(request, folder, summary):
     counts["좌표 누락"] = counts.pop("미탐")  # 새 영상에는 수동 정답이 없다.
     review = current_review(folder)
     catch = review["catch_frame"] if review else events.get("catch")
+    lift, knee, drive = events.get("lift_off"), events.get("knee_pass"), events.get("drive")
+    peak = coaching.get("drive_to_peak")
+    update_peak = peak is None or (peak["drive_frame"], peak["catch_frame"]) != (drive, catch)
+    update_pulls = "late_source" not in pulls and knee is not None and (drive is not None or lift is not None)
+    frames = None
+    if update_pulls or (update_peak and drive is not None and catch is not None):
+        frames = saved_measurement_frames(folder)
+    if update_pulls:
+        previous_early = pulls.get("early")
+        pulls = pull_summary(frames, lift, knee, drive, rise)
+        if frames.empty and previous_early is not None:
+            pulls["early"] = previous_early
+    if update_peak:
+        peak = drive_to_peak(frames, drive, catch)
     files = {}
     for filename in MEDIA_TYPES:
         path = chart_path(folder, review) if filename == "catch_to_finish.png" else folder / filename
@@ -129,7 +141,7 @@ def public_result(request, folder, summary):
         trunk_change_deg=trunk_change, trunk_change_reason=trunk_reason,
         knee_to_contact_speed_px_s=pulls.get("late"), pull_speed_ratio=pulls.get("ratio"),
         pull_speed_reason=pulls.get("reason", "저장된 분석에 구간 속도 기록 없음"),
-        drive_to_peak=reviewed_peak(folder, coaching.get("drive_to_peak"), events.get("drive"), catch),
+        drive_to_peak=peak,
         summary_url=request.url_for("get_result", analysis_id=folder.name).path, files=files,
         recovery_review_url=request.url_for("review_recovery", analysis_id=folder.name).path,
         catch_to_finish=review or coaching.get("catch_to_finish"),

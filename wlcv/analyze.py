@@ -65,6 +65,8 @@ def main():
     if pulls.get("ratio") is not None:
         print(f"이륙→무릎 {pulls['early']:.2f} px/s · 무릎→접촉 {pulls['late']:.2f} px/s · 앞/뒤 {pulls['ratio']:.3f}")
     else:
+        if pulls.get("late") is not None:
+            print(f"무릎→접촉 평균 수직속도 {pulls['late']:.2f} px/s")
         print("속도 비율 보류 ·", pulls["reason"])
     peak = summary["coaching"]["drive_to_peak"]
     if peak["peak_frame"] is None:

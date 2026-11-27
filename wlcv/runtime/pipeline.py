@@ -118,7 +118,7 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
                                              for name in ("baseline", "cutmix", "none")},
                    "cutmix_weights": str(weights.cutmix) if cutmix_model is not None else None,
                    "plate_weights": str(weights.plate), "pose_weights": str(weights.pose),
-                   "coaching": coaching_summary(rows, lift, knee, events, direction),
+                   "coaching": coaching_summary(rows, lift, knee, events, direction, knee_to_contact=measurement),
                    "plate_imgsz": plate_imgsz, "pose_imgsz": 640,
                    "device": device, "read_mode": read_mode, "manual_phase_interval": phase_summary(rows, lift, knee)}
         if use_engines:
