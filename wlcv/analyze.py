@@ -62,12 +62,22 @@ def main():
         source = "코사인 직접 검출" if measurement["source"] == "cosine" else "기존 추적 좌표"
         print(f"무릎 통과→접촉 상승량 {measurement['rise_px']:+.2f} px · {source}", measurement["reason"])
     pulls = summary["coaching"]["pulls"]
-    if pulls.get("ratio") is not None:
-        print(f"이륙→무릎 {pulls['early']:.2f} px/s · 무릎→접촉 {pulls['late']:.2f} px/s · 앞/뒤 {pulls['ratio']:.3f}")
+    for label, key in (("이륙→무릎", "early"), ("무릎→접촉", "late")):
+        if pulls[key] is not None:
+            print(f"{label} 평균 수직속도 {pulls[key]:.2f} px/s")
+    if pulls.get("late_over_early") is not None:
+        print(f"앞/뒤 {pulls['ratio']:.3f}배 · 뒤/앞 {pulls['late_over_early']:.3f}배 · {pulls['verdict']}")
     else:
-        if pulls.get("late") is not None:
-            print(f"무릎→접촉 평균 수직속도 {pulls['late']:.2f} px/s")
-        print("속도 비율 보류 ·", pulls["reason"])
+        print("속도 판정 보류 ·", pulls["reason"] or "두 구간 모두 상승해야 비교할 수 있습니다.")
+    if "sensitivity_range" in pulls:
+        bounds = pulls["sensitivity_range"]
+        print(f"시점을 한 프레임 옮기면 판정이 달라집니다 (계산 가능한 변경 {pulls['evaluated_shifts']}/4).")
+        for label, key, unit in (("이륙→무릎", "early_speed_px_s", "px/s"), ("무릎→접촉", "late_speed_px_s", "px/s"),
+                                 ("앞/뒤", "early_over_late", "배"), ("뒤/앞", "late_over_early", "배")):
+            low, high = bounds[key]
+            print(f"{label} {low:.2f}~{high:.2f} {unit}")
+    elif pulls["verdict"] != "보류" and pulls.get("evaluated_shifts", 4) < 4:
+        print(f"시점 변경은 4조건 중 {pulls['evaluated_shifts']}조건만 판정할 수 있습니다.")
     peak = summary["coaching"]["drive_to_peak"]
     if peak["peak_frame"] is None:
         print("접촉→최고점 산출 보류 ·", peak["reason"])

@@ -90,6 +90,27 @@ def phase_summary(records, lift, knee):
     }
 
 
+def speed_verdict(early, late, ratio):
+    """두 구간 모두 상승할 때 뒤/앞 속도 배수로 판정한다."""
+    if ratio is None or early is None or late is None or min(early, late) <= 0:
+        return None, "보류"
+    factor = late / early
+    if factor < 0.90:
+        return factor, "느림"
+    if factor > 1.10:
+        return factor, "빠름"
+    return factor, "비슷"
+
+
+def shifted_pull_events(lift, knee, contact, events):
+    """이륙은 고정한다. 다른 수동 시점과 순서가 겹치는 이동은 제외한다."""
+    if None in (lift, knee, contact):
+        return []
+    next_event = events.get("catch") if events.get("catch") is not None else events.get("finish")
+    pairs = [(knee - 1, contact), (knee + 1, contact), (knee, contact - 1), (knee, contact + 1)]
+    return [(k, c) for k, c in pairs if lift < k < c and (next_event is None or c < next_event)]
+
+
 def pull_summary(frames, lift, knee, contact, measurement):
     """앞 구간은 추적 좌표, 뒤 구간은 두 끝점 검사를 거쳐 채택한 상승량을 쓴다."""
     indices = [lift, knee, contact]
@@ -100,6 +121,7 @@ def pull_summary(frames, lift, knee, contact, measurement):
     values = speeds_from_rises(coordinates.source_time_ms, np.array([y[0] - y[1], late_rise], dtype=float))
     result = {k: float(values[k]) if np.isfinite(values[k]) else None for k in ("early", "late", "ratio")}
     result["reason"] = "이륙·무릎 통과·접촉 중 미지정 시점이 있습니다." if None in indices else values["reason"]
+    result["late_over_early"], result["verdict"] = speed_verdict(result["early"], result["late"], result["ratio"])
     result["late_source"] = measurement["source"] if measurement is not None else (
         "tracking" if np.isfinite(late_rise) else None)
     result["endpoint_frames"] = indices
@@ -108,12 +130,38 @@ def pull_summary(frames, lift, knee, contact, measurement):
     return result
 
 
-def coaching_summary(rows, lift, knee, events, facing, *, knee_to_contact=None):
+def compare_pull_boundaries(frames, lift, shifts, checks, baseline):
+    """범위는 기준과 계산 가능한 이동을 모두 포함하며 판정이 갈릴 때만 표시한다."""
+    alternatives = []
+    if baseline["verdict"] != "보류":
+        for k, c in shifts:
+            if k not in checks or c not in checks:
+                continue
+            source, rise = select_rise([checks[k], checks[c]])
+            score = pull_summary(frames, lift, k, c, {"source": source, "rise_px": rise})
+            if score["verdict"] != "보류":
+                alternatives.append(score)
+    result = {"evaluated_shifts": len(alternatives)}
+    if any(score["verdict"] != baseline["verdict"] for score in alternatives):
+        scores = [baseline, *alternatives]
+        bounds = {}
+        for field, key in (("early", "early_speed_px_s"), ("late", "late_speed_px_s"),
+                           ("ratio", "early_over_late"), ("late_over_early", "late_over_early")):
+            values = [score[field] for score in scores]
+            bounds[key] = [min(values), max(values)]
+        result["sensitivity_range"] = bounds
+    return result
+
+
+def coaching_summary(rows, lift, knee, events, facing, *, knee_to_contact=None, endpoint_checks=None):
     """원본 시각과 모델 관측으로 계산하며 측정할 수 없는 값은 JSON null로 남긴다."""
     frames = rows.set_index("frame_index", verify_integrity=True)
     result = {"units": "source px, source-video seconds", "landmarks": "model plate box center and near shoulder"}
     contact = events.get("drive")
     result["pulls"] = pull_summary(frames, lift, knee, contact, knee_to_contact)
+    if endpoint_checks is not None:
+        shifts = shifted_pull_events(lift, knee, contact, events)
+        result["pulls"].update(compare_pull_boundaries(frames, lift, shifts, endpoint_checks, result["pulls"]))
     catch = events.get("catch")
     result["drive_to_peak"] = drive_to_peak(frames, contact, catch)
     if catch not in frames.index:
@@ -134,8 +182,24 @@ def coaching_summary(rows, lift, knee, events, facing, *, knee_to_contact=None):
     return result
 
 
-def measure_knee_to_contact(rows, video, knee, contact, images, cosine, weights, device):
-    """무릎 통과→접촉 상승량과 두 시점의 채택·보류 이유를 기록한다."""
+def check_pull_endpoints(rows, indices, images, cosine, video, device):
+    """겹치는 끝점은 영상 한 편에서 한 번만 검출한다."""
+    tracks = rows.set_index("frame_index")
+    checks = {}
+    for index in sorted(set(indices).intersection(tracks.index)):
+        tracked = tracks.loc[index]
+        candidate = None
+        if cosine is not None:
+            candidate = detect_endpoint(cosine, images[index], video, index, device)
+        box = tracked[["plate_x1", "plate_y1", "plate_x2", "plate_y2"]].to_numpy(float)
+        checks[index] = check_endpoint(
+            index, box, tracked.plate_cy_px, tracked.selected_model, candidate,
+            model_loaded=cosine is not None,
+        )
+    return checks
+
+
+def knee_contact_measurement(knee, contact, checks, cosine_weights):
     result = {
         "knee_pass_frame": knee, "contact_frame": contact, "source": None, "rise_px": None,
         "endpoints": [], "cosine_weights": None, "reason": "무릎 통과 또는 접촉 시점 미지정",
@@ -143,21 +207,17 @@ def measure_knee_to_contact(rows, video, knee, contact, images, cosine, weights,
     if knee is None or contact is None:
         return result
 
-    tracks = rows.set_index("frame_index")
-    for index in (knee, contact):
-        tracked = tracks.loc[index]
-        candidate = None
-        if cosine is not None:
-            candidate = detect_endpoint(cosine, images[index], video, index, device)
-        box = tracked[["plate_x1", "plate_y1", "plate_x2", "plate_y2"]].to_numpy(float)
-        result["endpoints"].append(check_endpoint(
-            index, box, tracked.plate_cy_px, tracked.selected_model, candidate,
-            model_loaded=cosine is not None,
-        ))
-
+    result["endpoints"] = [checks[knee], checks[contact]]
     result["source"], result["rise_px"] = select_rise(result["endpoints"])
     result["reason"] = " · ".join(
         f"{point['frame_index']}번 {point['reason']}" for point in result["endpoints"] if point["reason"]
     )
-    result["cosine_weights"] = str(weights) if cosine is not None else None
+    result["cosine_weights"] = str(cosine_weights) if cosine_weights is not None else None
     return result
+
+
+def measure_knee_to_contact(rows, video, knee, contact, images, cosine, weights, device):
+    """기존 두 시점 실험에서도 같은 검출·채택 규칙을 사용한다."""
+    indices = () if None in (knee, contact) else (knee, contact)
+    checks = check_pull_endpoints(rows, indices, images, cosine, video, device) if indices else {}
+    return knee_contact_measurement(knee, contact, checks, weights if cosine is not None else None)

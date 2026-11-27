@@ -68,6 +68,28 @@ def test_coaching_ratio_uses_selected_rise_and_original_time():
     assert pulls(0, 1., "cosine")["ratio"] is None
 
 
+def test_speed_range_requires_a_changed_verdict_after_rechecking_endpoints():
+    rows = pd.DataFrame({"frame_index": range(6), "source_time_ms": [0, 100, 200, 300, 400, 500],
+                         "plate_cy_px": [70., 60., 50., 40., 30., 20.]})
+    checks = {i: {"track_y_px": y, "cosine_y_px": y, "accepted": True}
+              for i, y in enumerate(rows.plate_cy_px)}
+    def compare():
+        return coaching_summary(rows, 0, 2, {"drive": 4}, None,
+                                knee_to_contact={"rise_px": 20., "source": "cosine"},
+                                endpoint_checks=checks)["pulls"]
+
+    checks[5].update(cosine_y_px=11., accepted=False)
+    stable = compare()
+    assert stable["evaluated_shifts"] == 4 and stable["verdict"] == "비슷"
+    assert "sensitivity_range" not in stable
+    checks[5]["accepted"] = True
+    changed = compare()
+    assert changed["sensitivity_range"]["late_over_early"] == pytest.approx([1., 1.3])
+    del checks[5]
+    incomplete = compare()
+    assert incomplete["evaluated_shifts"] == 3 and "sensitivity_range" not in incomplete
+
+
 def test_explicit_deployment_folder_keeps_missing_models_in_that_folder(monkeypatch, tmp_path):
     """배포 폴더에 없는 모델을 로컬 학습 폴더에서 조용히 읽지 않는다."""
     from wlcv.runtime.models import experiment_models, file_models

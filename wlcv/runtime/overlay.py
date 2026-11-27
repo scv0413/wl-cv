@@ -129,7 +129,7 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
             if index != plate.frame_index or image.shape[:2] != (info.height, info.width):
                 raise ValueError(f"{index}번 원본의 크기 또는 프레임 번호를 확인하세요.")
             if endpoint_images is not None and index in endpoint_images:
-                endpoint_images[index] = image.copy()  # 그리기 전 BGR 원본 두 장만 보존한다.
+                endpoint_images[index] = image.copy()  # 측정할 끝점의 그리기 전 BGR 원본만 보존한다.
             drawing = perf_counter()
             selection = ((plate.performer_number, plate.performer_selection)
                          if hasattr(plate, "performer_selection") else None)

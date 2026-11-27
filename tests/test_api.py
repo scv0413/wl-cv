@@ -89,6 +89,8 @@ def test_old_summary_recomputes_late_speed_and_ratio_on_read(tmp_path, monkeypat
             data = (await client.get(f"/analyses/{folder.name}")).raise_for_status().json()
             assert data["knee_to_contact_speed_px_s"] == 500.
             assert data["pull_speed_ratio"] == 0.4
+            assert data["pull_speed_late_over_early"] == 2.5 and data["pull_speed_verdict"] == "빠름"
+            assert data["pull_speed_evaluated_shifts"] is None and "pull_speed_range" not in data
     asyncio.run(check())
 
 

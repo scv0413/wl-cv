@@ -13,7 +13,9 @@ from ultralytics import YOLO
 from wlcv.config import local_path
 from wlcv.data.mp4_input import inspect_mp4, validate_events
 from wlcv.runtime.inference import load_plate_model, single_pass_frames
-from wlcv.runtime.measurements import coaching_summary, measure_knee_to_contact, phase_summary
+from wlcv.runtime.measurements import (
+    check_pull_endpoints, coaching_summary, knee_contact_measurement, phase_summary, shifted_pull_events,
+)
 from wlcv.runtime.models import file_models
 from wlcv.runtime.overlay import PLATE_STATES, render_frames
 from wlcv.runtime.recovery import save_recovery_curve
@@ -83,7 +85,10 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
         has_pair = knee is not None and contact is not None
         if has_pair and knee >= contact:
             raise ValueError("무릎 통과가 접촉보다 먼저여야 합니다.")
-        endpoint_images = {knee: None, contact: None} if has_pair and weights.cosine.is_file() else {}
+        endpoints = {knee, contact} if has_pair else set()
+        for pair in shifted_pull_events(lift, knee, contact, events):
+            endpoints.update(pair)
+        endpoint_images = dict.fromkeys(endpoints) if weights.cosine.is_file() else {}
         rows = render_frames(stream, info, fps, lift, knee, overlay, events, timings,
                              endpoint_images=endpoint_images)
         rendered = perf_counter()
@@ -98,9 +103,8 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
             validate_events(events, len(rows))
         measurement_start = perf_counter()
         cosine = detector(weights.cosine) if endpoint_images else None
-        measurement = measure_knee_to_contact(
-            rows, video, knee, contact, endpoint_images, cosine, weights.cosine, device
-        )
+        checks = check_pull_endpoints(rows, endpoints, endpoint_images, cosine, video, device)
+        measurement = knee_contact_measurement(knee, contact, checks, weights.cosine if cosine is not None else None)
         timings["cosine_measurement"] = perf_counter() - measurement_start if has_pair else 0.0
         rows["forward_px"] = (rows.plate_cx_px - rows.shoulder_x_px) * (direction or np.nan)
         rows.to_csv(folder / "frames.csv", index=False)
@@ -118,7 +122,8 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
                                              for name in ("baseline", "cutmix", "none")},
                    "cutmix_weights": str(weights.cutmix) if cutmix_model is not None else None,
                    "plate_weights": str(weights.plate), "pose_weights": str(weights.pose),
-                   "coaching": coaching_summary(rows, lift, knee, events, direction, knee_to_contact=measurement),
+                   "coaching": coaching_summary(rows, lift, knee, events, direction, knee_to_contact=measurement,
+                                                endpoint_checks=checks),
                    "plate_imgsz": plate_imgsz, "pose_imgsz": 640,
                    "device": device, "read_mode": read_mode, "manual_phase_interval": phase_summary(rows, lift, knee)}
         if use_engines:

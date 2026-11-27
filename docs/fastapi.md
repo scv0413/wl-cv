@@ -41,6 +41,9 @@ uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --por
 | `trunk_change_deg` | 가까운 어깨와 골반을 이은 선이 이륙 때보다 무릎 통과 때 얼마나 기울었는지 나타냅니다. 음수면 몸통이 더 세워졌습니다. |
 | `knee_to_contact_speed_px_s` | 채택한 `knee_to_contact_rise_px` ÷ 무릎 통과부터 바 접촉까지의 원본 경과 시간(초). 이 두 시점만 있어도 계산합니다. |
 | `pull_speed_ratio` | 앞 속도 ÷ 뒤 속도. 두 구간 모두 상승했고 값이 1보다 작으면 뒤 구간이 더 빠릅니다. |
+| `pull_speed_late_over_early` · `pull_speed_verdict` | 뒤 속도 ÷ 앞 속도. 0.90 미만은 느림, 0.90~1.10은 비슷, 1.10 초과는 빠름입니다. 양쪽 상승 속도를 비교할 수 없으면 판정을 보류합니다. |
+| `pull_speed_evaluated_shifts` | 무릎 통과 또는 접촉 하나만 ±1프레임 옮긴 네 조건 중 계산 가능한 수. 예전 분석에 이 검사가 없으면 `null`입니다. |
+| `pull_speed_range` | 판정이 바뀔 때만 응답에 포함합니다. 입력한 이륙을 고정하고, 기준과 계산 가능한 변경에서 나온 두 평균속도와 두 방향 속도 비율의 최솟값·최댓값을 보여줍니다. |
 
 앞 구간은 추적 좌표를, 뒤 구간은 `knee_to_contact_source`에 표시된 출처의 상승량을 사용합니다. 뒤 구간 상승량이 1px 이하면 속도 비율을 보류합니다. 체간 변화에는 이륙·무릎 통과 두 시점만 필요합니다. 값이 `null`이면 `pull_speed_reason` 또는 `trunk_change_reason`에서 사유를 확인하세요.
 
