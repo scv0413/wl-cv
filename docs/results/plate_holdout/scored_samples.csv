@@ -1,0 +1,36 @@
+video_id,frame,scored,gt_present,plate_status,model,iou,tp,fn,fp
+a04_sn_f_01,11,True,True,직접 검출,baseline,0.9615980882234354,1,0,0
+a04_sn_f_01,38,True,True,직접 검출,baseline,0.9850356156155123,1,0,0
+a04_sn_f_01,65,True,True,직접 검출,baseline,0.9531405204948648,1,0,0
+a04_sn_f_01,91,True,True,직접 검출,baseline,0.9757887014335841,1,0,0
+a04_sn_f_01,118,True,True,직접 검출,baseline,0.9642478938192726,1,0,0
+a04_sn_h_02,14,True,True,직접 검출,baseline,0.9794112343534945,1,0,0
+a04_sn_h_02,18,True,True,직접 검출,baseline,0.9758377374374498,1,0,0
+a04_sn_h_02,22,True,True,직접 검출,baseline,0.9774213191892223,1,0,0
+a04_sn_h_02,25,True,True,직접 검출,baseline,0.9798528017243099,1,0,0
+a04_sn_h_02,29,True,True,직접 검출,baseline,0.9457184729840722,1,0,0
+a07_sn_f_01,5,True,True,직접 검출,baseline,0.9550294200417139,1,0,0
+a07_sn_f_01,16,True,True,직접 검출,baseline,0.9189444142802099,1,0,0
+a07_sn_f_01,27,True,True,직접 검출,baseline,0.9801068993127758,1,0,0
+a07_sn_f_01,39,True,True,직접 검출,baseline,0.9654100454058783,1,0,0
+a07_sn_f_01,50,True,True,직접 검출,baseline,0.9519551613711018,1,0,0
+a07_sn_h_02,46,True,True,직접 검출,baseline,0.9543860341556509,1,0,0
+a07_sn_h_02,49,True,True,직접 검출,baseline,0.9392954273308373,1,0,0
+a07_sn_h_02,52,True,True,직접 검출,baseline,0.948315801693373,1,0,0
+a07_sn_h_02,54,True,True,미탐,none,,0,1,0
+a07_sn_h_02,57,True,True,직접 검출,baseline,0.9377804683584786,1,0,0
+c06_sn_f_01,7,True,True,직접 검출,baseline,0.969269697595869,1,0,0
+c06_sn_f_01,27,True,True,직접 검출,baseline,0.9713665574699449,1,0,0
+c06_sn_f_01,48,True,True,직접 검출,baseline,0.9765424084698793,1,0,0
+c06_sn_f_01,69,True,True,직접 검출,baseline,0.9787644221331416,1,0,0
+c06_sn_f_01,89,True,True,직접 검출,baseline,0.9470880020243879,1,0,0
+c06_sn_f_02,3,True,True,직접 검출,baseline,0.9644351243937881,1,0,0
+c06_sn_f_02,24,True,True,직접 검출,baseline,0.9670407176523547,1,0,0
+c06_sn_f_02,45,True,True,직접 검출,baseline,0.9719923001304072,1,0,0
+c06_sn_f_02,65,True,True,직접 검출,baseline,0.9639415290574734,1,0,0
+c06_sn_f_02,86,True,True,직접 검출,baseline,0.9535746118825024,1,0,0
+c06_sn_f_03,5,True,True,직접 검출,baseline,0.9777713017040957,1,0,0
+c06_sn_f_03,26,True,True,직접 검출,baseline,0.9739580677896416,1,0,0
+c06_sn_f_03,47,True,True,직접 검출,baseline,0.9722142674341496,1,0,0
+c06_sn_f_03,68,True,True,직접 검출,baseline,0.9716234297738013,1,0,0
+c06_sn_f_03,89,True,True,직접 검출,baseline,0.9713026287557596,1,0,0

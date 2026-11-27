@@ -1,0 +1,4 @@
+person_id,frames,motion_frames,scored,tp,fn,fp,motion_missing,all_missing,motion_longest,all_longest
+a04,179,124,10,10,0,0,0,0,0,0
+a07,135,58,10,9,1,0,1,1,1,1
+c06,291,252,15,15,0,0,0,0,0,0

@@ -1,0 +1,8 @@
+person_id,video_id,frames,motion_frames,start,end,scored,tp,fn,fp,motion_missing,motion_longest,all_missing,all_longest
+a04,a04_sn_f_01,125,108,11,118,5,5,0,0,0,0,0,0
+a04,a04_sn_h_02,54,16,14,29,5,5,0,0,0,0,0,0
+a07,a07_sn_f_01,63,46,5,50,5,5,0,0,0,0,0,0
+a07,a07_sn_h_02,72,12,46,57,5,4,1,0,1,1,1,1
+c06,c06_sn_f_01,102,83,7,89,5,5,0,0,0,0,0,0
+c06,c06_sn_f_02,94,84,3,86,5,5,0,0,0,0,0,0
+c06,c06_sn_f_03,95,85,5,89,5,5,0,0,0,0,0,0

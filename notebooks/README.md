@@ -98,6 +98,7 @@ uv run --env-file .env python -m wlcv.training.train
 | CutMix가 보완하는 프레임과 화면 경계 오탐은? | [자동 보완](experiments/63_plate_cutmix_fallback.ipynb) · [경계 추적](experiments/66_plate_edge_continuity.ipynb) |
 | 상승량에만 코사인 모델을 쓰면 무엇이 달라지는가? | [모델별 비교](experiments/75_plate_deployment_comparison.ipynb) · [두 시점의 좌표 선택](experiments/76_plate_cosine_fallback.ipynb) |
 | 배포 정밀도에서 검출과 상승량이 유지되는가? | [PyTorch·ONNX·TensorRT 비교](experiments/77_plate_aux_precision.ipynb) |
+| 모델을 고정한 뒤 다른 선수에서 얼마나 놓쳤는가? | [원판 블라인드 판독](annotation/20_plate_holdout.ipynb) · [테스트 표·그래프와 FiftyOne 검수](experiments/79_plate_holdout_review.ipynb) |
 
 [전체 실험 노트북](experiments/) · [전체 수동 판독 노트북](annotation/)
 
