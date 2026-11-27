@@ -1,0 +1,3 @@
+video_id,frame,model,person_candidates,performer_selection,raw_boxes,after_performer_filter,best_confidence,manual_box_iou
+a07_sn_h_02,54,baseline,3,ambiguous,3,0,0.962092,0.9332733176628749
+a07_sn_h_02,54,cutmix,3,ambiguous,3,0,0.95081615,0.9347379730441283
