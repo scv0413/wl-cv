@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from wlcv.data.frames import timed_frames_rgb
 from wlcv.data.mp4_input import VideoInputError
+from wlcv.runtime.foreground import select_performer
 from wlcv.runtime.inference import predict_rgb
 from wlcv.runtime.measurements import vertical_angle
 from wlcv.runtime.pose import joint_table
@@ -22,15 +23,26 @@ PLATE_STATES = {
 POSE_COLOR = (255, 220, 60)
 
 
-def draw_pose(image, result, near_side):
-    """수행자 후보가 하나일 때만 가까운 쪽 어깨·골반·무릎·발목을 연결한다."""
+def draw_pose(image, result, near_side, *, selection=None):
+    """선택한 수행자의 가까운 쪽 어깨·골반·무릎·발목을 연결한다."""
     count = len(result.boxes)
-    record = {"person_candidates": count, "pose_side": near_side, "joints_drawn": 0,
+    if selection is None:
+        index, reason = select_performer(result.boxes.xyxy, None)
+        number = None if index is None else index + 1
+    else:
+        number, reason = selection
+    record = {"person_candidates": count, "performer_number": number, "performer_selection": reason, "pose_side": near_side, "joints_drawn": 0,
               "shoulder_x_px": None, "shoulder_y_px": None, "trunk_angle_deg": None}
-    if count != 1:
+    box = result.boxes.xyxy[number - 1] if number is not None else (None,) * 4
+    for key, value in zip(("performer_x1", "performer_y1", "performer_x2", "performer_y2"), box):
+        record[key] = float(value) if value is not None else None
+    if number is None:
         return record
+    if count > 1:
+        left, top, right, bottom = map(round, box)
+        cv2.rectangle(image, (left, top), (right, bottom), POSE_COLOR, 2)
 
-    points = joint_table(result, person_number=1, min_confidence=0.50)
+    points = joint_table(result, person_number=number, min_confidence=0.50)
     previous = None
     for point in points.loc[points["방향"] == near_side].to_dict("records"):
         if point["표시 상태"] != "표시":
@@ -72,8 +84,9 @@ def draw_caption(image, plate, pose, phase):
     lines = [(f"Frame {plate.frame_index}   Plate {label}{score}", color)]
     if hasattr(plate, "selected_model"):
         lines.append((f"Plate model: {plate.selected_model.upper()}", color))
-    if pose["person_candidates"] == 1:
-        detail = f"{pose['pose_side']}   {pose['joints_drawn']}/4 joints"
+    if pose["performer_number"] is not None:
+        detail = (f"{pose['performer_number']}/{pose['person_candidates']}   {pose['pose_side']}   "
+                  f"{pose['joints_drawn']}/4 joints")
     else:
         detail = f"withheld   {pose['person_candidates']} candidates"
     lines.append((f"Pose: {detail}", POSE_COLOR))
@@ -118,7 +131,9 @@ def render_frames(frame_stream, info, fps, lift, knee, output, phase_events, tim
             if endpoint_images is not None and index in endpoint_images:
                 endpoint_images[index] = image.copy()  # 그리기 전 BGR 원본 두 장만 보존한다.
             drawing = perf_counter()
-            pose = draw_pose(image, result, info.near_side)
+            selection = ((plate.performer_number, plate.performer_selection)
+                         if hasattr(plate, "performer_selection") else None)
+            pose = draw_pose(image, result, info.near_side, selection=selection)
             draw_plate(image, plate, trail)
             phase, caption = events.get(index, ("", ""))
             draw_caption(image, plate, pose, caption)

@@ -102,7 +102,7 @@ def coaching_summary(rows, lift, knee, events, facing):
     point = frames.loc[catch]
     info = {"frame": int(catch), "forward_px": None, "up_px": None}
     if point[["plate_cx_px", "plate_cy_px", "shoulder_x_px", "shoulder_y_px"]].isna().any():
-        info["reason"] = "원판 또는 단일 수행자의 가까운 어깨 관측 누락"
+        info["reason"] = "원판 또는 선택된 수행자의 가까운 어깨 관측 누락"
     else:
         info["up_px"] = float(point.shoulder_y_px - point.plate_cy_px)
         if facing in (-1, 1):
