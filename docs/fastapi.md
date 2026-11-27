@@ -6,32 +6,40 @@ Docker Desktop에서 CPU 버전을 실행하는 방법과 같은 영상으로 �
 
 ## 서버 시작
 
-프로젝트 루트에서 실행합니다. Python 3.12, uv, ffprobe와 베이스라인 원판·CutMix 원판·자세 가중치가 필요합니다. [모델 위치와 MP4 준비 방법](analyze_mp4.md)을 참고하세요.
+프로젝트 루트에서 실행합니다. 처음에는 개발 의존성까지 설치합니다. Python 3.12, uv, ffprobe와 베이스라인 원판·CutMix 원판·자세 가중치가 필요합니다. [모델 위치와 MP4 준비 방법](analyze_mp4.md)을 참고하세요.
 
 ```bash
-uv sync --locked --no-dev --inexact
+uv sync --locked --inexact
 cp -n .env.example .env
-uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-기본 추론 장치는 CPU입니다. Mac GPU를 사용하려면 `.env`에 `WL_API_DEVICE=mps`를 지정하고 서버를 다시 시작하세요. 서버 한 프로세스가 영상 한 편씩 분석합니다. 터미널에서 Ctrl+C를 누르면 종료됩니다.
+VS Code에서 이 프로젝트 폴더를 열고 새 터미널에서 실행합니다.
+
+```bash
+source .venv/bin/activate
+fastapi dev
+```
+
+가상환경이 이미 켜져 있으면 `fastapi dev`만 입력합니다. 프로젝트의 `.env`를 읽고 서버가 준비되면 기본 브라우저에 [Swagger 문서](http://127.0.0.1:8000/docs)가 한 번 열립니다. 코드를 저장하면 서버가 자동으로 다시 로드됩니다. 종료할 때는 같은 터미널에서 `Ctrl+C`를 누릅니다.
+
+기본 추론 장치는 CPU입니다. Mac GPU를 사용하려면 `.env`에 `WL_API_DEVICE=mps`를 지정하고 서버를 다시 시작하세요. 서버 한 프로세스가 영상 한 편씩 분석합니다.
 
 ## 브라우저에서 사용
 
-1. [API 문서 열기](http://127.0.0.1:8000/docs) → **POST /analyses** → **Try it out**을 누릅니다.
+1. [API 문서 열기](http://127.0.0.1:8000/docs) → **영상 분석 → MP4 한 편 분석** → **Try it out**을 누릅니다.
 2. `video`에 MP4를 선택합니다. `near_side`는 카메라에 가까운 **선수의 왼쪽·오른쪽**, `facing`은 선수가 보는 **화면의 왼쪽·오른쪽**입니다. 각 값은 `left` 또는 `right`입니다.
 3. 원판은 자동으로 보완합니다. 두 모델이 각자의 궤적을 추적하고, 베이스라인의 직접 검출과 시간 연결이 모두 비면 그 프레임에 CutMix 결과를 사용합니다. 수동 시점은 아는 것만 입력하세요. 첫 프레임은 0입니다.
 4. **Execute**를 누릅니다. 완료 응답의 `summary_url`과 `files`는 같은 서버의 경로입니다. 예를 들어 `http://127.0.0.1:8000` 뒤에 `files["overlay.mp4"]` 값을 붙여 브라우저 주소창에서 열 수 있습니다. `frames.csv`는 다운로드하고, 캐치·피니시 관측이 있으면 결과 PNG도 열 수 있습니다.
 
-| 요청 | 반환 |
-| --- | --- |
-| `POST /analyses` | 완료 시 201, 분석 ID·요약·파일 링크. `Location` 헤더로도 요약 주소를 확인합니다. |
-| `GET /analyses/{analysis_id}` | 저장된 요약과 파일 링크 |
-| `GET /analyses/{analysis_id}/pull-review` | ready와 transition의 적용값을 확인하고 수정하는 화면 |
-| `POST /analyses/{analysis_id}/pull-review` | 선택한 시점으로 속도와 비율을 다시 계산 |
-| `GET /analyses/{analysis_id}/catch-to-finish` | 오버레이를 보며 캐치와 피니시를 선택하는 화면 |
-| `POST /analyses/{analysis_id}/catch-to-finish` | 선택한 두 시점과 저장된 CSV로 그래프를 만들고 측정 가능한 프레임 수 반환 |
-| `GET /analyses/{analysis_id}/files/{filename}` | 오버레이 MP4, 프레임 CSV 또는 생성된 캐치→피니시 PNG |
+| Swagger 메뉴 | 요청 | 용도 |
+| --- | --- | --- |
+| 영상 분석 | `POST /analyses` | MP4 한 편 제출. 분석 ID·수치·결과 링크 반환 |
+| 영상 분석 | `GET /analyses/{analysis_id}` | 이전 분석의 요약과 링크 다시 열기 |
+| 영상 분석 | `GET /analyses/{analysis_id}/files/{filename}` | 오버레이 MP4·프레임 CSV·생성된 그래프 PNG 열기 |
+| 시점 검수 | `POST /analyses/{analysis_id}/pull-review` | ready 또는 transition을 수정해 두 구간의 평균속도와 뒤/앞 비율 재계산 |
+| 시점 검수 | `POST /analyses/{analysis_id}/catch-to-finish` | catch와 finish를 선택해 어깨 기준 원판 위치와 체간 기울기 그래프 생성 |
+
+프레임을 보면서 수정하려면 분석 응답의 `pull_review_url` 또는 `recovery_review_url`을 여세요. 두 화면에서 저장한 결과도 같은 분석 ID에 반영됩니다.
 
 ### 당기기 시점 제안과 검수
 

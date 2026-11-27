@@ -140,6 +140,23 @@ def test_review_saved_frames_without_inference(tmp_path, monkeypatch):
     assert json.loads((folder / "summary.json").read_text()) == summary
 
 
+def test_swagger_lists_analysis_and_review_actions():
+    schema = app.openapi()
+    base = "/analyses/{analysis_id}"
+    operations = {(method, path): operation["tags"] for path, methods in schema["paths"].items()
+                  for method, operation in methods.items()}
+    assert operations == {
+        ("post", "/analyses"): ["영상 분석"],
+        ("get", base): ["영상 분석"],
+        ("get", base + "/files/{filename}"): ["영상 분석"],
+        ("post", base + "/pull-review"): ["시점 검수"],
+        ("post", base + "/catch-to-finish"): ["시점 검수"],
+    }
+    review_body = schema["paths"][base + "/pull-review"]["post"]["requestBody"]["content"]["application/x-www-form-urlencoded"]
+    review_form = review_body["schema"]["$ref"].split("/")[-1]
+    assert set(schema["components"]["schemas"][review_form]["properties"]) == {"ready", "transition"}
+
+
 def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkeypatch):
     def fake_analysis(path, *, plate_mode, manual_events, **options):
         summary = sample_summary(plate_mode)
@@ -226,6 +243,9 @@ def test_pull_review_updates_only_selected_events_and_preserves_the_original(tmp
         assert client.post(url, data={"transition": 5, "drive": 5}).status_code == 422
         assert client.post(url, data={"ready": 1, "lift_off": 0, "drive": 5}).status_code == 422
         assert client.get(saved["summary_url"]).json() == saved
+        page = client.get(saved["pull_review_url"]).raise_for_status()
+        assert f'{url}/frames/' in page.text
+        assert client.get(f'{url}/frames/6').status_code == 422
         checked = client.post(url, data={"ready": 0, "transition": 2}).raise_for_status().json()
         assert checked["pull_review"]["status"] == "confirmed"
         assert checked["pull_speed_verdict"] == "보류"
