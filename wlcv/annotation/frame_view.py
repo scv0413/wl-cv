@@ -31,12 +31,15 @@ class FrameView:
         self.image = widgets.Image(format="jpeg", layout=widgets.Layout(
             max_width="100%", height="auto", align_self="flex-start"))
         self.rgb = None
+        self.original_rgb = None
 
-    def read(self):
+    def read(self, *, keep_original=False):
         """표시용 프레임을 준비하고 원본의 (너비, 높이)를 반환한다."""
         self.rgb = None
+        self.original_rgb = None
         self.image.value = b""
         rgb = read_rgb(self.video_path, self.slider.value)
+        self.original_rgb = rgb if keep_original else None
         height, width = rgb.shape[:2]
         scale = min(1, 720 / width, 540 / height)
         size = (max(1, round(width * scale)), max(1, round(height * scale)))

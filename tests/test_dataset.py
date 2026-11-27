@@ -52,8 +52,18 @@ def test_missing_frame_leaves_no_partial_dataset(sample):
     assert not (sample / "dataset").exists()
 
 
-def test_person_cannot_appear_in_both_splits(tmp_path):
+@pytest.mark.parametrize("other_role", ["validation", "test"])
+def test_person_cannot_appear_in_both_splits(tmp_path, other_role):
     split = tmp_path / "people.csv"
-    split.write_text("video_id,person_id,role\none,a,train\ntwo,a,validation\n")
+    split.write_text(f"video_id,person_id,role\none,a,train\ntwo,a,{other_role}\n")
     with pytest.raises(ValueError):
         read_splits(split)
+
+
+def test_heldout_label_is_excluded_from_training_and_validation(sample):
+    with (sample / "people.csv").open("a") as stream:
+        stream.write("three,c,test\n")
+    (sample / "boxes/three_f0.txt").write_text("0 0.5 0.5 0.2 0.2\n")
+    folder = build(sample).parent
+    assert sorted(p.stem for p in folder.glob("images/*/*.jpg")) == ["one_f0", "two_f1"]
+    assert sorted(p.stem for p in folder.glob("labels/*/*.txt")) == ["one_f0", "two_f1"]

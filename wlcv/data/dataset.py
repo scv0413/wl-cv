@@ -18,8 +18,8 @@ from .plate_labels import label_frame, read_boxes
 
 
 def read_splits(split_csv: str | Path) -> dict[str, str]:
-    """같은 사람의 영상이 학습과 검증 양쪽에 들어가는지 확인한다."""
-    subsets = {"train": "train", "validation": "val"}
+    """한 선수의 영상에는 train, validation, test 중 한 역할만 허용한다."""
+    subsets = {"train": "train", "validation": "val", "test": "test"}
     people = {}
     videos = {}
     with Path(split_csv).open(encoding="utf-8-sig", newline="") as stream:
@@ -33,7 +33,7 @@ def read_splits(split_csv: str | Path) -> dict[str, str]:
             if video in videos:
                 raise ValueError(f"분할표에 영상이 중복되었습니다: {video}")
             if person in people and people[person] != role:
-                raise ValueError(f"{person}의 영상이 학습과 검증에 함께 등록되었습니다.")
+                raise ValueError(f"{person}의 영상이 여러 분할에 등록되었습니다: {people[person]}, {role}")
             people[person] = role
             videos[video] = subsets[role]
     return videos
@@ -90,6 +90,8 @@ def prepare_dataset(
         video, index = label_frame(label)
         if video not in subsets:
             raise ValueError(f"{label.name}의 영상이 분할표에 없습니다.")
+        if subsets[video] == "test":
+            continue
         if index in annotations[video]:
             raise ValueError(f"{video}의 {index}번 프레임에 라벨 파일이 두 개 있습니다.")
         read_boxes(label)
@@ -107,7 +109,8 @@ def prepare_dataset(
     if missing:
         raise FileNotFoundError(f"{video_dir}에 원본 영상이 없습니다: {', '.join(missing)}")
 
-    inputs = _signature([split_csv, *label_files, *videos.values()])
+    used_labels = [label for frames in annotations.values() for label in frames.values()]
+    inputs = _signature([split_csv, *used_labels, *videos.values()])
     if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):
         return _reuse(output_dir, inputs)
 
@@ -118,7 +121,7 @@ def prepare_dataset(
         for subset in ("train", "val"):
             for kind in ("images", "labels"):
                 (build / kind / subset).mkdir(parents=True)
-        with tqdm(total=len(label_files), desc="라벨 프레임 추출", unit="장") as progress:
+        with tqdm(total=len(used_labels), desc="라벨 프레임 추출", unit="장") as progress:
             for video, targets in annotations.items():
                 subset = subsets[video]
                 last = max(targets)

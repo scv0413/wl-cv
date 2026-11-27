@@ -5,6 +5,7 @@ from ipyevents import Event
 
 from wlcv.config import ANNOTATIONS
 from .frame_view import FrameView
+from .pixel_edges import BoxEdgeSliders, normalized_box
 from .storage import load_boxes, save_boxes
 
 
@@ -45,6 +46,12 @@ def plate_box_editor(video_path, annotations=ANNOTATIONS):
         if dirty:
             status.value += " · 프레임을 이동하려면 저장하거나 다시 읽으세요."
 
+    def redraw():
+        view.show(boxes)
+        update_controls()
+
+    edges = BoxEdgeSliders(boxes, view, on_edit=redraw)
+
     def refresh(*_):
         nonlocal previous, anchor
         anchor = None
@@ -52,13 +59,14 @@ def plate_box_editor(video_path, annotations=ANNOTATIONS):
         boxes.clear()
         update_controls()
         try:
-            view.read()
+            view.read(keep_original=True)
             previous = load_boxes(annotations, video_id, view.slider.value)
             boxes.extend(previous[1])
             view.show(boxes)
             update_controls()
         except (OSError, ValueError, RuntimeError, IndexError) as error:
             status.value = str(error)
+        edges.select_last()
 
     def update_jumps():
         options = [(f"프레임 {f}", f) for f in _labelled_frames(annotations, video_id)
@@ -73,8 +81,8 @@ def plate_box_editor(video_path, annotations=ANNOTATIONS):
 
     def undo_box(_):
         boxes.pop()
-        view.show(boxes)
-        update_controls()
+        edges.select_last()
+        redraw()
 
     def persist(button):
         try:
@@ -110,9 +118,13 @@ def plate_box_editor(video_path, annotations=ANNOTATIONS):
             w, h = abs(point[0] - x), abs(point[1] - y)
             anchor = None
             if w * event["boundingRectWidth"] >= 2 and h * event["boundingRectHeight"] >= 2:
-                boxes.append(((x + point[0]) / 2, (y + point[1]) / 2, w, h))
-            view.show(boxes)
-            update_controls()
+                height, width = view.original_rgb.shape[:2]
+                left, right = sorted((round(x * width), round(point[0] * width)))
+                top, bottom = sorted((round(y * height), round(point[1] * height)))
+                if left < right and top < bottom:
+                    boxes.append(normalized_box(left, top, right, bottom, width, height))
+                    edges.select_last()
+            redraw()
 
     for button in (save, empty):
         button.on_click(persist)
@@ -131,4 +143,4 @@ def plate_box_editor(video_path, annotations=ANNOTATIONS):
     actions = widgets.Box([undo, save, empty, reload], layout=widgets.Layout(
         display="flex", flex_flow="row wrap"))
     return widgets.VBox([widgets.Label(video_path.name), jump, view.slider,
-                         view.image, actions, status])
+                         view.image, actions, status, edges])
