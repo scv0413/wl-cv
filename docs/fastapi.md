@@ -27,13 +27,24 @@ uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --por
 | --- | --- |
 | `POST /analyses` | 완료 시 201, 분석 ID·요약·파일 링크. `Location` 헤더로도 요약 주소를 확인합니다. |
 | `GET /analyses/{analysis_id}` | 저장된 요약과 파일 링크 |
+| `GET /analyses/{analysis_id}/pull-review` | 세 시점 후보를 프레임별로 확인하는 화면 |
+| `POST /analyses/{analysis_id}/pull-review` | 선택한 시점으로 속도와 비율을 다시 계산 |
 | `GET /analyses/{analysis_id}/catch-to-finish` | 오버레이를 보며 캐치와 피니시를 선택하는 화면 |
 | `POST /analyses/{analysis_id}/catch-to-finish` | 선택한 두 시점과 저장된 CSV로 그래프를 만들고 측정 가능한 프레임 수 반환 |
 | `GET /analyses/{analysis_id}/files/{filename}` | 오버레이 MP4, 프레임 CSV 또는 생성된 캐치→피니시 PNG |
 
+### 당기기 시점 제안과 접촉 검수
+
+1. Swagger의 **POST /analyses**에서 MP4와 촬영 방향을 보내고 `ready`(이륙)·`transition`(무릎 통과)·`drive`(접촉)를 비워 둡니다. 모델이 영상 처음부터 찾은 후보와 근거가 `pull_review.suggested`, `reasons`에 표시됩니다. 원판의 연속 상승과 무릎·상부 허벅지 높이 통과를 사용합니다. 접촉 후보는 실제 바와 몸의 접촉을 사람이 확인해야 합니다.
+2. 같은 서버에서 응답의 **`pull_review_url`**을 엽니다. 접촉 후보 장면에서 이전·다음 장으로 이동할 수 있습니다. 장면을 바꾸면 **지금 보는 프레임 사용**을 누릅니다. 이륙·무릎 통과도 고칠 수 있고, 비어 있는 후보는 직접 채울 수 있습니다.
+3. **접촉 확인 · 다시 계산**을 누르면 선택한 시점의 두 구간 평균 수직속도(px/s), 뒤/앞 비율과 판정이 표시됩니다. 검수 전은 잠정 결과입니다. 확인 후에는 같은 분석 ID를 다시 조회해도 결과가 유지됩니다. ±1프레임에서 판정이 달라지면 범위도 표시됩니다.
+4. Swagger에서도 **POST /analyses/{analysis_id}/pull-review**에 `drive`만 보내 후보를 확인하거나 고칠 수 있습니다. `ready`·`transition` 생략 시 현재 선택을 사용합니다. 저장된 선택은 `pull_review.events`, 자동·직접 입력·검수 출처는 `sources`에서 확인합니다. 검수 화면과 `pull_review`는 `ready`, `transition`, `drive`를 씁니다. 업로드 당시 기록인 `manual_events`와 예전 클라이언트에서는 `lift_off`와 `knee_pass`도 지원합니다. 여기서 `ready`는 속도 계산의 이륙 프레임입니다.
+
+업로드 중 원판을 추적한 프레임의 코사인 끝점 검사 결과를 숫자로 저장하므로 재검수 때 원본 재업로드나 모델 재실행이 필요하지 않습니다. 이 처리는 초기 업로드의 추론 시간을 늘립니다. 이전 버전으로 처리한 영상은 새로 제출하면 검수할 수 있습니다.
+
 ### Swagger에서 속도와 체간 기울기 읽기
 
-`lift_off`(원판이 바닥에서 떨어지는 순간), `knee_pass`(무릎 통과), `drive`(바와 몸의 접촉)를 입력한 뒤 **Execute → Response body**를 봅니다. 저장한 분석은 **GET /analyses/{analysis_id}**에서 같은 값을 다시 볼 수 있습니다.
+`ready`(이륙), `transition`(무릎 통과), `drive`(바와 몸의 접촉)를 입력한 뒤 **Execute → Response body**를 봅니다. 저장한 분석은 **GET /analyses/{analysis_id}**에서 같은 값을 다시 볼 수 있습니다.
 
 | 응답 필드 | 읽는 방법 |
 | --- | --- |
@@ -49,7 +60,7 @@ uv run --no-sync --env-file .env uvicorn wlcv.api.app:app --host 127.0.0.1 --por
 
 응답의 `plate_mode=cutmix`는 자동 보완을 켰다는 뜻입니다. `selected_model_counts.cutmix`는 실제로 보조 좌표를 채택한 프레임 수입니다. 베이스라인 단독 비교는 CLI의 `--plate-mode single`로 재현할 수 있습니다.
 
-`plate_counts`는 직접 검출·시간 연결·좌표 누락을 셉니다. 새 영상은 수동 정답이 없어 정확도·오탐률을 채점할 수 없습니다. `lift_to_knee_rise_px`는 이륙→무릎 통과, `knee_to_contact_rise_px`는 무릎 통과→접촉 상승량입니다. 수동 시점이나 좌표가 빠져 계산할 수 없으면 값은 `null`입니다. 후자의 측정 출처와 보류 이유도 함께 반환합니다.
+`plate_counts`는 직접 검출·시간 연결·좌표 누락을 셉니다. 새 영상은 수동 정답이 없어 정확도·오탐률을 채점할 수 없습니다. `lift_to_knee_rise_px`는 이륙→무릎 통과, `knee_to_contact_rise_px`는 무릎 통과→접촉 상승량입니다. 시점이나 원판 좌표가 부족해 계산할 수 없으면 값은 `null`입니다. 후자의 측정 출처와 보류 이유도 함께 반환합니다.
 
 ### 접촉부터 원판 최고점까지
 

@@ -32,7 +32,8 @@ def draw_pose(image, result, near_side, *, selection=None):
     else:
         number, reason = selection
     record = {"person_candidates": count, "performer_number": number, "performer_selection": reason, "pose_side": near_side, "joints_drawn": 0,
-              "shoulder_x_px": None, "shoulder_y_px": None, "trunk_angle_deg": None}
+              "shoulder_x_px": None, "shoulder_y_px": None, "trunk_angle_deg": None,
+              "hip_y_px": None, "knee_y_px": None, "ankle_y_px": None}
     box = result.boxes.xyxy[number - 1] if number is not None else (None,) * 4
     for key, value in zip(("performer_x1", "performer_y1", "performer_x2", "performer_y2"), box):
         record[key] = float(value) if value is not None else None
@@ -48,6 +49,9 @@ def draw_pose(image, result, near_side, *, selection=None):
         if point["표시 상태"] != "표시":
             previous = None
             continue
+        height_key = {"골반": "hip_y_px", "무릎": "knee_y_px", "발목": "ankle_y_px"}.get(point["관절"])
+        if height_key:
+            record[height_key] = float(point["y (px)"])
         if point["관절"] == "어깨":
             record["shoulder_x_px"] = float(point["x (px)"])
             record["shoulder_y_px"] = float(point["y (px)"])

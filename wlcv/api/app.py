@@ -8,12 +8,15 @@ from threading import Lock
 from typing import Annotated, Literal
 
 import pandas as pd
+from filelock import FileLock
 from fastapi import FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParameter
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, NonNegativeInt
 from pydantic.json_schema import SkipJsonSchema
 
+from wlcv.api.pull_review import reviewed_frame, save_pull_review
+from wlcv.api.pull_page import pull_page
 from wlcv.api.recovery_review import chart_path, create_review, current_review
 from wlcv.api.review_page import review_page
 from wlcv.config import local_path
@@ -34,6 +37,31 @@ Frame = Annotated[
     NonNegativeInt | Literal[""] | None,
     Form(examples=[""], description="선택 사항입니다. 시점을 모르면 빈칸으로 두세요. 0은 영상의 첫 프레임입니다."),
 ]
+FrameValue = NonNegativeInt | Literal[""] | None
+ReadyFrame = Annotated[FrameValue, Form(examples=[""], description="이륙 · 원판이 바닥에서 올라가기 시작하는 프레임. 첫 프레임은 0번입니다.")]
+TransitionFrame = Annotated[FrameValue, Form(examples=[""], description="무릎 통과 · 원판 중심이 가까운 쪽 무릎 높이를 통과하는 프레임.")]
+DriveFrame = Annotated[FrameValue, Form(examples=[""], description="접촉 · 바와 몸이 닿는 프레임.")]
+LegacyFrame = Annotated[SkipJsonSchema[FrameValue], Form()]
+PHASE_NAMES = {"lift_off": "ready", "knee_pass": "transition", "drive": "drive"}
+
+
+def frame_alias(name, value, previous):
+    if value in (None, ""):
+        return previous
+    if previous not in (None, "", value):
+        raise HTTPException(422, f"{name}에 서로 다른 프레임 번호가 입력됐습니다.")
+    return value
+
+
+def public_pull_review(review):
+    if review is None:
+        return None
+    result = dict(review)
+    for field in ("suggested", "events", "sources", "reasons"):
+        result[field] = {PHASE_NAMES[k]: v for k, v in review[field].items()}
+    return result
+
+
 Artifact = Literal["overlay.mp4", "frames.csv", "catch_to_finish.png"]
 MEDIA_TYPES = {"overlay.mp4": "video/mp4", "frames.csv": "text/csv", "catch_to_finish.png": "image/png"}
 
@@ -57,6 +85,14 @@ class PullSpeedRange(BaseModel):
     late_speed_px_s: tuple[float, float] = Field(description="무릎 통과→접촉 평균 수직속도 범위(px/s)")
     early_over_late: tuple[float, float] = Field(description="앞/뒤 속도 비율의 최솟값과 최댓값")
     late_over_early: tuple[float, float] = Field(description="판정에 쓰는 뒤/앞 속도 비율의 최솟값과 최댓값")
+
+
+class PullReview(BaseModel):
+    suggested: dict[str, int | None] = Field(description="이륙·무릎 통과·접촉 자동 후보. 판독 보류는 null입니다.")
+    reasons: dict[str, str]
+    events: dict[str, int] = Field(description="현재 코칭 계산에 사용한 시점.")
+    sources: dict[str, Literal["automatic", "manual", "reviewed"]]
+    status: Literal["needs_review", "confirmed"] = Field(description="접촉 확인 전에는 코칭 수치가 잠정값입니다.")
 
 
 class AnalysisResult(BaseModel):
@@ -86,6 +122,8 @@ class AnalysisResult(BaseModel):
     pull_speed_reason: str = Field(description="구간 속도 또는 비율을 표시할 수 없는 이유. 모두 측정되면 빈 문자열입니다.")
     drive_to_peak: DriveToPeak
     summary_url: str
+    pull_review: PullReview | None = None
+    pull_review_url: str | None = None
     recovery_review_url: str
     catch_to_finish: dict | None
     files: dict[str, str]
@@ -110,7 +148,8 @@ def public_result(request, folder, summary):
     rise = summary["knee_to_contact_rise"]
     coaching = summary.get("coaching", {})
     pulls = coaching.get("pulls", {})
-    events = summary["manual_events"]
+    pull_review = summary.get("pull_review")
+    events = {**summary["manual_events"], **(pull_review["events"] if pull_review else {})}
     trunk_change = summary.get("trunk_change_deg")
     trunk_reason = ""
     if trunk_change is None:
@@ -146,7 +185,7 @@ def public_result(request, folder, summary):
     return AnalysisResult(
         analysis_id=folder.name, frame_count=summary["frame_count"], near_side=summary["near_side"],
         facing=summary["facing"], plate_mode=summary["plate_mode"], plate_counts=counts,
-        selected_model_counts=summary["selected_model_counts"], manual_events=events,
+        selected_model_counts=summary["selected_model_counts"], manual_events=summary["manual_events"],
         inference_backends=summary.get("inference_backends", {}),
         lift_to_knee_rise_px=summary["manual_phase_interval"]["rise_px"],
         knee_to_contact_rise_px=rise["rise_px"], knee_to_contact_source=rise["source"],
@@ -158,6 +197,8 @@ def public_result(request, folder, summary):
         pull_speed_reason=pulls.get("reason", "저장된 분석에 구간 속도 기록 없음"),
         drive_to_peak=peak,
         summary_url=request.url_for("get_result", analysis_id=folder.name).path, files=files,
+        pull_review=public_pull_review(pull_review),
+        pull_review_url=request.url_for("review_pulls", analysis_id=folder.name).path if pull_review else None,
         recovery_review_url=request.url_for("review_recovery", analysis_id=folder.name).path,
         catch_to_finish=review or coaching.get("catch_to_finish"),
     )
@@ -167,8 +208,8 @@ def public_result(request, folder, summary):
     "/analyses", status_code=201, summary="MP4 한 편 분석",
     description=(
         "원판 추적이 끊기면 CutMix로 자동 보완합니다. "
-        "두 구간의 평균 수직속도(px/s)를 보려면 이륙(lift_off), 무릎 통과(knee_pass), "
-        "바와 몸의 접촉(drive) 프레임을 입력하세요. 이륙·무릎 통과만 지정해도 체간 기울기 변화(°)를 확인할 수 있습니다. "
+        "ready(이륙), transition(무릎 통과), drive(접촉)를 비우면 세 시점 후보를 제안합니다. pull_review_url을 열어 접촉을 확인하거나 "
+        "세 시점을 수정하면 평균 수직속도와 뒤/앞 비율을 다시 계산합니다. 직접 입력한 시점이 우선합니다. "
         "무릎 통과 또는 접촉을 ±1프레임 옮겨 뒤/앞 속도 판정이 바뀌면 pull_speed_range도 표시합니다. "
         "접촉과 캐치(catch)를 입력하면 drive_to_peak에서 상승량·최고점 프레임·평균속도와 ±1프레임 속도 범위를 볼 수 있습니다. "
         "Execute 후 Response body에서 측정값을 확인하세요. 첫 프레임은 0이며 모르는 시점은 빈칸으로 두세요."
@@ -182,16 +223,20 @@ def create_analysis(
     facing: Annotated[Side, Form(description="선수가 향한 쪽. 화면의 왼쪽 또는 오른쪽")],
     # 예전 비교 스크립트의 명시적 모드는 지원하고, 업로드 화면은 자동 보완을 쓴다.
     plate_mode: Annotated[SkipJsonSchema[Mode], Form()] = "cutmix",
-    lift_off: Frame = None,
-    knee_pass: Frame = None,
-    drive: Frame = None,
+    ready: ReadyFrame = None,
+    transition: TransitionFrame = None,
+    drive: DriveFrame = None,
+    lift_off: LegacyFrame = None,
+    knee_pass: LegacyFrame = None,
     catch: Frame = None,
     finish: Frame = None,
 ) -> AnalysisResult:
     filename = Path((video.filename or "").replace("\\", "/")).name
     if Path(filename).suffix.lower() != ".mp4":
         raise HTTPException(415, "MP4 파일을 선택하세요.")
-    events = {"lift_off": lift_off, "knee_pass": knee_pass, "drive": drive, "catch": catch, "finish": finish}
+    events = {"lift_off": frame_alias("ready", ready, lift_off),
+              "knee_pass": frame_alias("transition", transition, knee_pass),
+              "drive": drive, "catch": catch, "finish": finish}
     events = {key: frame for key, frame in events.items() if frame not in (None, "")}
 
     with TemporaryDirectory() as temp:
@@ -203,7 +248,7 @@ def create_analysis(
                 folder, summary = analyze_file(
                     path, near_side=near_side, facing=facing, manual_events=events,
                     plate_mode=plate_mode, device=os.environ.get("WL_API_DEVICE") or "cpu",
-                    output_parent=output_root(),
+                    output_parent=output_root(), enable_pull_review=True,
                 )
         except VideoInputError as error:
             raise HTTPException(422, str(error).replace(str(path), filename)) from error
@@ -226,6 +271,49 @@ def get_result(request: Request, analysis_id: AnalysisId) -> AnalysisResult:
     return public_result(request, folder, saved_summary(folder))
 
 
+def reviewable_summary(folder):
+    summary = saved_summary(folder)
+    if "pull_review" not in summary:
+        raise HTTPException(409, "이전 분석에는 시점 검수용 좌표가 없습니다. MP4를 다시 제출하세요.")
+    return summary
+
+
+@app.get("/analyses/{analysis_id}/pull-review", response_class=HTMLResponse, summary="이륙·무릎 통과·접촉 검수 화면")
+def review_pulls(request: Request, analysis_id: AnalysisId):
+    folder = output_root() / analysis_id
+    summary = reviewable_summary(folder)
+    return pull_page(public_result(request, folder, summary))
+
+
+@app.get("/analyses/{analysis_id}/pull-review/frames/{frame}", response_class=Response, summary="검수할 오버레이 한 프레임")
+def get_pull_frame(analysis_id: AnalysisId, frame: NonNegativeInt):
+    folder = output_root() / analysis_id
+    summary = reviewable_summary(folder)
+    if frame >= summary["frame_count"]:
+        raise HTTPException(422, "영상의 프레임 범위를 벗어났습니다.")
+    return Response(reviewed_frame(folder, frame), media_type="image/jpeg")
+
+
+@app.post("/analyses/{analysis_id}/pull-review", summary="접촉 확인 및 구간 평균속도 재계산")
+def confirm_pulls(request: Request, analysis_id: AnalysisId,
+                  drive: Annotated[NonNegativeInt, Form(description="접촉 · 바와 몸이 닿는 것으로 확인한 프레임.")],
+                  ready: ReadyFrame = None, transition: TransitionFrame = None,
+                  lift_off: LegacyFrame = None, knee_pass: LegacyFrame = None) -> AnalysisResult:
+    folder = output_root() / analysis_id
+    lift_off = frame_alias("ready", ready, lift_off)
+    knee_pass = frame_alias("transition", transition, knee_pass)
+    edits = {"drive": drive}
+    edits.update({k: v for k, v in (("lift_off", lift_off), ("knee_pass", knee_pass)) if v not in (None, "")})
+    reviewable_summary(folder)
+    try:
+        with analysis_lock, FileLock(str(folder / ".review.lock")):
+            summary = reviewable_summary(folder)
+            save_pull_review(folder, summary, edits)
+            return public_result(request, folder, summary)
+    except VideoInputError as error:
+        raise HTTPException(422, str(error)) from error
+
+
 @app.get("/analyses/{analysis_id}/catch-to-finish", response_class=HTMLResponse, summary="캐치·피니시 판독 화면")
 def review_recovery(request: Request, analysis_id: AnalysisId):
     folder = output_root() / analysis_id
@@ -244,9 +332,10 @@ def review_recovery(request: Request, analysis_id: AnalysisId):
 def save_review(request: Request, analysis_id: AnalysisId, catch: Annotated[NonNegativeInt, Form()],
                 finish: Annotated[NonNegativeInt, Form()]) -> AnalysisResult:
     folder = output_root() / analysis_id
-    summary = saved_summary(folder)
+    saved_summary(folder)
     try:
-        with analysis_lock:
+        with analysis_lock, FileLock(str(folder / ".review.lock")):
+            summary = saved_summary(folder)
             create_review(folder, summary, catch, finish)
             return public_result(request, folder, summary)
     except VideoInputError as error:

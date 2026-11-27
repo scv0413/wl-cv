@@ -61,7 +61,7 @@ Netron으로 원판·자세 ONNX의 입출력 구조를 확인하고, PyTorch와
    docker compose up --build -d api
    ```
 
-3. [로컬 Swagger](http://127.0.0.1:8001/docs)에서 **POST /analyses → Try it out** 선택. MP4와 카메라에 가까운 **선수 자신의 좌우**(`near_side`), 선수가 보는 **화면의 좌우**(`facing`) 입력. 동작 시점은 선택 사항이며 첫 프레임은 0번.
+3. [로컬 Swagger](http://127.0.0.1:8001/docs)에서 **POST /analyses → Try it out** 선택. MP4와 카메라에 가까운 **선수 자신의 좌우**(`near_side`), 선수가 보는 **화면의 좌우**(`facing`) 입력. 시점을 비우면 `ready`(이륙)·`transition`(무릎 통과)·`drive`(접촉)를 자동 제안. `pull_review_url`에서 장면을 확인하고 구간 평균속도와 뒤/앞 비율을 다시 계산. 첫 프레임은 0번.
 4. **Execute** 후 응답의 `files`에서 영상·CSV 확인. 캐치·피니시는 `recovery_review_url`에서 사후 선택해 어깨 기준 원판 위치와 체간 기울기 그래프 생성 가능. 기본 저장 위치는 `outputs/docker_analysis/api/`, 종료 명령은 `docker compose down`.
 
 ### Mac에서 측면 영상 한 편 분석하기

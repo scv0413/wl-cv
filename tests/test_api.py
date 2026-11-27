@@ -159,7 +159,8 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
     form = upload["schema"]["$ref"].split("/")[-1]
     properties = schema["components"]["schemas"][form]["properties"]
     assert "plate_mode" not in properties
-    frames = ("lift_off", "knee_pass", "drive", "catch", "finish")
+    assert "lift_off" not in properties and "knee_pass" not in properties
+    frames = ("ready", "transition", "drive", "catch", "finish")
     for key in frames:
         assert properties[key]["examples"] == [""]
 
@@ -168,6 +169,7 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
             cases = [
                 ({}, "cutmix", {}),
                 (dict.fromkeys(frames, ""), "cutmix", {}),
+                ({"ready": "0", "transition": "1", "drive": "2"}, "cutmix", {"lift_off": 0, "knee_pass": 1, "drive": 2}),
                 ({"plate_mode": "single", "lift_off": "0"}, "single", {"lift_off": 0}),
                 ({"lift_off": "0", "knee_pass": "1", "drive": "2"}, "cutmix", {"lift_off": 0, "knee_pass": 1, "drive": 2}),
             ]
@@ -188,3 +190,37 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
                     assert (await client.get(metrics["summary_url"])).json() == metrics
 
     asyncio.run(check())
+
+
+def test_pull_review_updates_only_selected_events_and_preserves_the_original(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import pandas as pd
+
+    monkeypatch.setenv("WL_OUTPUT_DIR", str(tmp_path))
+    folder = tmp_path / "api/20261128-120010-000001"
+    folder.mkdir(parents=True)
+    scores = [100., 94., 80., 65., 54., 35.]
+    pd.DataFrame({"frame_index": range(6), "source_time_ms": [0, 100, 200, 300, 400, 500],
+                  "plate_cy_px": scores, "trunk_angle_deg": [20.] * 6}).to_csv(folder / "frames.csv", index=False)
+    candidates = {"lift_off": 0, "knee_pass": 2, "drive": 4}
+    summary = {**sample_summary("cutmix"), "frame_count": 6, "coaching": {},
+               "pull_review": {"events": candidates, "suggested": candidates, "reasons": {},
+                               "sources": dict.fromkeys(candidates, "automatic"), "status": "needs_review"}}
+    (folder / "summary.json").write_text(json.dumps(summary))
+    points = [{"frame_index": i, "track_y_px": y, "cosine_y_px": y, "accepted": True, "reason": ""}
+              for i, y in enumerate(scores)]
+    (folder / "pull_endpoints.json").write_text(json.dumps(points))
+    url = f"/analyses/{folder.name}/pull-review"
+    with TestClient(app) as client:
+        saved = client.post(url, data={"drive": 5}).raise_for_status().json()
+        assert saved["manual_events"] == {}
+        assert saved["pull_review"]["events"] == {"ready": 0, "transition": 2, "drive": 5}
+        assert saved["pull_review"]["suggested"] == {"ready": 0, "transition": 2, "drive": 4}
+        assert saved["pull_review"]["sources"]["transition"] == "automatic"
+        assert saved["pull_review"]["status"] == "confirmed"
+        assert saved["lift_to_knee_speed_px_s"] == 100.
+        assert saved["knee_to_contact_speed_px_s"] == 150.
+        assert saved["pull_speed_late_over_early"] == 1.5
+        assert client.post(url, data={"transition": 5, "drive": 5}).status_code == 422
+        assert client.post(url, data={"ready": 1, "lift_off": 0, "drive": 5}).status_code == 422
+        assert client.get(saved["summary_url"]).json() == saved
