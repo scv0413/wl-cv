@@ -27,10 +27,12 @@ dependencies = [
 [dependency-groups]
 tracking = ["wandb>=0.31.2"]
 dev = [
+    "fastapi-cli>=0.0.34",
     "fiftyone==1.22.1",
     "httpx>=0.28.1",
     "jupyterlab",
     "pytest",
+    "python-dotenv>=1.2.4",
 ]
 
 [tool.setuptools.packages.find]
