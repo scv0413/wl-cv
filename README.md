@@ -54,7 +54,7 @@ Netron에서 두 모델의 ONNX 입출력 구조를 확인한 뒤 같은 프레�
 | --- | --- |
 | **전체 처리 시간** · 합성 영상 116프레임, 원판·자세 두 모델, 같은 GPU에서 각 2회 평균 | 모델 로드부터 오버레이·CSV 저장 후 종료까지 PyTorch CUDA FP32 **5.08초**, ONNX Runtime CUDA FP32 5.52초, TensorRT FP32 4.06초, **TensorRT FP16 3.79초**. [측정 조건](docs/tensorrt_3090.md) |
 | **변환 후 원판 품질** · 실제 검증 선수 6명, 수동 박스 270장과 무릎 통과→바 접촉 6구간 | FP16에서 **미탐 5장·오탐 0장** 유지. 수동 허브 대비 상승량 평균 절대오차는 PyTorch FP32 **2.23 px**, TensorRT FP16 **2.35 px**. [엔진별 대조](docs/plate_aux_precision.md) |
-| **GPU 컨테이너의 요청부터 파일 다운로드까지** · 저장소 Dockerfile로 빌드한 이미지에 합성 MP4 제출 | 당시 코사인 포함 4엔진 구성에서 **HTTP 201**. 현재 기본 3엔진 구성의 GPU 시간은 미측정. 내려받은 H.264 오버레이 **24프레임** 전체 디코딩과 기준 파일과 동일한 **CSV 24행** 확인. [GPU 배포 검증](docs/gpu_fastapi.md#저장소-dockerfile로-빌드한-이미지-검증) · [CPU Docker 검증](docs/cpu_docker.md) |
+| **FastAPI 기본 3엔진** · RTX 3090에서 합성 MP4 24프레임을 제출해 결과 저장까지 측정 | 첫 요청 **3.546초**. 예열 뒤 100회 평균 **1.011초**, P95 **1.083초**. 첫·마지막 요청의 H.264 오버레이 24프레임과 CSV 24행 확인. [요청별 측정과 조건](docs/gpu_fastapi.md#기본-세-엔진의-fastapi-처리-시간) · [CPU Docker 검증](docs/cpu_docker.md) |
 
 ## 영상 한 편 분석하기
 
