@@ -4,13 +4,13 @@
 
 ## 모델 준비
 
-`deploy/gpu/release.json`은 기존 검증에 사용한 ONNX 네 개와 원판 엔진 세 개의 SHA-256이다. 모델 원본은 별도로 공급한다. 입력 폴더에는 다음 파일만 필요하다.
+`deploy/gpu/release.json`은 기존 검증에 사용한 ONNX 네 개와 원판 엔진 세 개의 SHA-256이다. 모델 원본은 별도로 공급한다. 기본 배포에는 베이스라인·CutMix·자세 ONNX가 필요하다. 예전 두 끝점 비교를 재현할 때는 준비 명령에 `--include-cosine`을 추가한다.
 
 | 역할 | ONNX 파일 | 재사용할 수 있는 RTX 3090 엔진 |
 | --- | --- | --- |
 | 원판 주 모델 | `baseline.onnx` | `baseline-fp16.engine` |
 | CutMix 보조 | `cutmix.onnx` | `cutmix-fp16.engine` |
-| 무릎 통과→접촉 상승량 | `cosine.onnx` | `cosine-fp16.engine` |
+| 선택 · 기존 무릎 통과→접촉 상승량 | `cosine.onnx` | `cosine-fp16.engine` |
 | 가까운 쪽 자세 | `pose.onnx` | 대상 장치에서 빌드 |
 
 준비 스크립트가 파일 체크섬을 대조한다. 캐시된 엔진을 역직렬화할 수 없으면 해당 ONNX에서 다시 빌드한다. 입력 형상은 배치 1, RGB 640×384(높이×너비)이고, 입출력 자료형은 FP32다. FP16 사용 여부는 엔진 검사기로 내부 층의 출력 자료형을 확인한다. 준비된 엔진과 검사 결과 `engines.json`이 같은 폴더에 저장된다.
@@ -45,7 +45,7 @@ python deploy/gpu/prepare_engines.py model_source "$WL_MODEL_DIR/tensorrt"
 python -m uvicorn wlcv.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-다른 터미널에서 `python deploy/gpu/smoke.py release/results/synthetic-01`을 실행한다. 출력 폴더에는 실제 HTTP 응답, 합성 입력, 내려받은 오버레이·CSV와 검증 JSON이 남는다. 검증 프로그램은 201 응답과 저장된 요약을 대조하고 네 모델 모두 실제로 호출한 백엔드가 `TensorRTBackend`인지 확인한다. 4·12번을 시험용 동작 시점으로 입력해 코사인 경로까지 실행한다. 오버레이가 H.264로 끝까지 디코딩되고 자막 영역이 달라졌는지, CSV에 원본 프레임 번호 0~23이 순서대로 저장됐는지도 확인한다.
+다른 터미널에서 `python deploy/gpu/smoke.py release/results/synthetic-01`을 실행한다. 출력 폴더에는 실제 HTTP 응답, 합성 입력, 내려받은 오버레이·CSV와 검증 JSON이 남는다. 검증 프로그램은 201 응답과 저장된 요약을 대조하고 시점을 비운 기본 업로드에서 베이스라인·CutMix·자세 세 모델의 실행 백엔드가 모두 `TensorRTBackend`인지 확인한다. 오버레이가 H.264로 끝까지 디코딩되고 자막 영역이 달라졌는지, CSV에 원본 프레임 번호 0~23이 순서대로 저장됐는지도 확인한다.
 
 ## Mac에서 확인한 범위
 
