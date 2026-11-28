@@ -187,7 +187,7 @@ def coaching_summary(rows, lift, knee, events, facing, *, knee_to_contact=None, 
     return result
 
 
-def check_pull_endpoints(rows, indices, images, cosine, video, device):
+def check_pull_endpoints(rows, indices, images=None, cosine=None, video=None, device="cpu"):
     """겹치는 끝점은 영상 한 편에서 한 번만 검출한다."""
     tracks = rows.set_index("frame_index")
     checks = {}

@@ -18,7 +18,7 @@ from wlcv.runtime.measurements import (
 )
 from wlcv.runtime.models import file_models
 from wlcv.runtime.overlay import PLATE_STATES, render_frames
-from wlcv.runtime.pull_review import cache_endpoints, initial_review, reviewed_metrics
+from wlcv.runtime.pull_review import initial_review, reviewed_metrics
 from wlcv.runtime.recovery import save_recovery_curve
 
 
@@ -87,16 +87,9 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
         if has_pair and knee >= contact:
             raise ValueError("무릎 통과가 접촉보다 먼저여야 합니다.")
         endpoints = {knee, contact} if has_pair else set()
-        checks = {}
-        cosine = None
         review = None
-        endpoint_images = {}
+        endpoint_images = dict.fromkeys(endpoints) if endpoints and weights.cosine.is_file() else {}
         timings["cosine_measurement"] = 0.0
-        if enable_pull_review:
-            cosine = detector(weights.cosine) if weights.cosine.is_file() else None
-            stream = cache_endpoints(stream, cosine, video, device, checks, timings)
-        elif weights.cosine.is_file():
-            endpoint_images = dict.fromkeys(endpoints)
         rows = render_frames(stream, info, fps, lift, knee, overlay, events, timings,
                              endpoint_images=endpoint_images)
         rendered = perf_counter()
@@ -110,21 +103,19 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
         if input_mode == "file":
             validate_events(events, len(rows))
         measurement_start = perf_counter()
+        # 코사인은 이전 측정 방식의 두 끝점을 업로드 때 명시한 경우에만 실행한다.
+        cosine = detector(weights.cosine) if endpoint_images else None
+        checks = check_pull_endpoints(rows, endpoints, endpoint_images, cosine, video, device) if endpoints else {}
+        if has_pair:
+            timings["cosine_measurement"] = perf_counter() - measurement_start
         effective = events
-        if enable_pull_review:
-            review = initial_review(rows, events)
-            effective = {**events, **review["events"]}
-            (folder / "pull_endpoints.json").write_text(json.dumps(list(checks.values()), allow_nan=False))
-        else:
-            cosine = detector(weights.cosine) if endpoint_images else None
-            checks = check_pull_endpoints(rows, endpoints, endpoint_images, cosine, video, device)
-            timings["cosine_measurement"] = perf_counter() - measurement_start if has_pair else 0.0
-        if not enable_pull_review and (lift is None or knee is None):
+        if enable_pull_review or lift is None or knee is None:
             proposed = initial_review(rows, events)
             effective = {**events, **proposed["events"]}
-            # CLI에서 무릎 시점을 자동 선택했을 때 부가 상승량에는 저장한 추적 좌표를 쓴다.
-            if contact is not None and effective.get("knee_pass") is not None and not checks:
-                checks = check_pull_endpoints(rows, [effective["knee_pass"], contact], {}, None, video, device)
+            if enable_pull_review:
+                review = proposed
+                if cosine is not None:
+                    (folder / "pull_endpoints.json").write_text(json.dumps(list(checks.values()), allow_nan=False))
         cosine_path = weights.cosine if cosine is not None else None
         metrics = reviewed_metrics(rows, effective, checks, cosine_path, direction)
         rows["forward_px"] = (rows.plate_cx_px - rows.shoulder_x_px) * (direction or np.nan)
@@ -164,7 +155,7 @@ def analyze_video(path, info, *, video, fps, direction, events, parent, weights,
             summary["coaching"]["catch_to_finish"] = save_recovery_curve(rows, events, folder)
         (folder / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         saved = perf_counter()
-        timings["verify_and_save"] = saved - rendered - (0 if enable_pull_review else timings["cosine_measurement"])
+        timings["verify_and_save"] = saved - rendered - timings["cosine_measurement"]
         elapsed = saved - start
         timing = {"pipeline_seconds": elapsed, "frames_per_second": len(rows) / elapsed,
                   "stage_seconds": timings}

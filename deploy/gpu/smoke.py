@@ -60,7 +60,7 @@ def verify(url, output, cpu_check=False, input_video=None):
     start = perf_counter()
     with source.open("rb") as fp:
         response = requests.post(url + "/analyses", files={"video": (source.name, fp, "video/mp4")},
-                                 data={"near_side": "left", "facing": "left", "knee_pass": 4, "drive": 12},
+                                 data={"near_side": "left", "facing": "left"},
                                  timeout=600)
     if response.status_code != 201:
         raise RuntimeError(f"POST /analyses 실패 ({response.status_code}): {response.text[:500]}")
@@ -71,8 +71,8 @@ def verify(url, output, cpu_check=False, input_video=None):
     if saved.json() != info or info["frame_count"] != FRAMES or info["plate_mode"] != "cutmix":
         raise ValueError("저장된 분석 요약을 확인하세요.")
     engines = info.get("inference_backends", {})
-    if not cpu_check and engines != dict.fromkeys(("baseline", "cutmix", "pose", "cosine"), "TensorRTBackend"):
-        raise ValueError(f"네 모델의 실제 TensorRT 실행을 확인할 수 없습니다: {engines}")
+    if not cpu_check and engines != dict.fromkeys(("baseline", "cutmix", "pose"), "TensorRTBackend"):
+        raise ValueError(f"기본 세 모델의 TensorRT 실행 결과가 예상과 다릅니다: {engines}")
     for name in ("overlay.mp4", "frames.csv"):
         artifact = requests.get(url + info["files"][name], timeout=60)
         artifact.raise_for_status()

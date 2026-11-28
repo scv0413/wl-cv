@@ -178,7 +178,8 @@ def test_upload_uses_automatic_fallback_without_a_mode_selector(tmp_path, monkey
     properties = schema["components"]["schemas"][form]["properties"]
     assert "plate_mode" not in properties
     assert "lift_off" not in properties and "knee_pass" not in properties
-    frames = ("ready", "transition", "drive", "catch", "finish")
+    assert "drive" not in properties
+    frames = ("ready", "transition", "catch", "finish")
     for key in frames:
         assert properties[key]["examples"] == [""]
 

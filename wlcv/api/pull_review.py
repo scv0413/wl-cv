@@ -51,7 +51,8 @@ def save_pull_review(folder, summary, updates):
     events.update(review["events"])
     rows = pd.read_csv(folder / "frames.csv")
     add_saved_clipping(rows, folder)
-    points = json.loads((folder / "pull_endpoints.json").read_text())
+    saved_points = folder / "pull_endpoints.json"
+    points = json.loads(saved_points.read_text()) if saved_points.is_file() else []
     checks = {point["frame_index"]: point for point in points}
     direction = {"left": -1, "right": 1}[summary["facing"]]
     metrics = reviewed_metrics(rows, events, checks, summary.get("pull_cosine_weights"), direction)

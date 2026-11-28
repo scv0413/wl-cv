@@ -70,7 +70,7 @@ def inspect_engine(engine, role):
     return count
 
 
-def prepare(source, output):
+def prepare(source, output, *, include_cosine=False):
     import tensorrt as trt
     import torch
 
@@ -88,6 +88,8 @@ def prepare(source, output):
         package = Path(temp) / "tensorrt"
         package.mkdir()
         for role, filename in MODEL_FILES.items():
+            if role == "cosine" and not include_cosine:
+                continue
             graph = source / f"{role}.onnx"
             graph_sha = check_source(graph, release[role]["onnx_sha256"])
             metadata = model_metadata(role)
@@ -121,5 +123,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--include-cosine", action="store_true", help="이전 무릎 통과·접촉 상승량 실험용 엔진도 준비")
     args = parser.parse_args()
-    prepare(args.source, args.output)
+    prepare(args.source, args.output, include_cosine=args.include_cosine)
