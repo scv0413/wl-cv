@@ -49,7 +49,6 @@ Frame = Annotated[
 FrameValue = NonNegativeInt | Literal[""] | None
 ReadyFrame = Annotated[FrameValue, Form(examples=[""], description="원판이 바닥에서 올라가기 시작하는 프레임. 첫 프레임은 0번입니다.")]
 TransitionFrame = Annotated[FrameValue, Form(examples=[""], description="원판 중심이 가까운 쪽 무릎 높이를 통과하는 프레임.")]
-DriveFrame = Annotated[FrameValue, Form(examples=[""], description="바와 몸이 닿는 프레임. 접촉 관련 추가 측정을 원할 때만 입력하세요.")]
 LegacyFrame = Annotated[SkipJsonSchema[FrameValue], Form()]
 PHASE_NAMES = {"lift_off": "ready", "knee_pass": "transition", "drive": "drive"}
 
@@ -97,7 +96,7 @@ class PullSpeedRange(BaseModel):
 
 
 class PullReview(BaseModel):
-    suggested: dict[str, int | None] = Field(description="ready, transition, drive의 자동 후보. 판독 보류는 null입니다.")
+    suggested: dict[str, int | None] = Field(description="기본 구간의 ready와 transition 자동 후보. 판독 보류는 null입니다.")
     reasons: dict[str, str]
     events: dict[str, int] = Field(description="현재 코칭 계산에 사용한 시점.")
     sources: dict[str, Literal["automatic", "manual", "reviewed"]]
@@ -235,7 +234,7 @@ def create_analysis(
     plate_mode: Annotated[SkipJsonSchema[Mode], Form()] = "cutmix",
     ready: ReadyFrame = None,
     transition: TransitionFrame = None,
-    drive: DriveFrame = None,
+    drive: LegacyFrame = None,
     lift_off: LegacyFrame = None,
     knee_pass: LegacyFrame = None,
     catch: Frame = None,

@@ -49,7 +49,7 @@ fastapi dev
 
 ### Swagger에서 속도와 체간 기울기 읽기
 
-**Execute → Response body**에서 기본 코칭 수치를 읽습니다. 두 속도와 비율에는 drive·catch 입력이 필요하지 않습니다. 저장된 분석은 **GET /analyses/{analysis_id}**에서 확인합니다.
+**Execute → Response body**에서 기본 코칭 수치를 읽습니다. 기본 업로드는 베이스라인·CutMix·자세 모델로 처리합니다. 두 속도와 비율에는 drive·catch 입력이 필요하지 않습니다. ready나 transition을 수정하면 저장한 원판 궤적으로 다시 계산합니다. 저장된 분석은 **GET /analyses/{analysis_id}**에서 확인합니다.
 
 | 응답 필드 | 읽는 방법 |
 | --- | --- |
@@ -68,11 +68,15 @@ API 0.2에서 `pull_speed_ratio`는 **뒤/앞**으로 바뀌었습니다. 이전
 
 응답의 `plate_mode=cutmix`는 자동 보완을 켰다는 뜻입니다. `selected_model_counts.cutmix`는 실제로 보조 좌표를 채택한 프레임 수입니다. 베이스라인 단독 비교는 CLI의 `--plate-mode single`로 재현할 수 있습니다.
 
-`plate_counts`는 직접 검출·시간 연결·좌표 누락을 셉니다. 새 영상은 수동 정답이 없어 정확도·오탐률을 채점할 수 없습니다. `lift_to_knee_rise_px`는 이륙→무릎 통과, `knee_to_contact_rise_px`는 무릎 통과→접촉 상승량입니다. 시점이나 원판 좌표가 부족해 계산할 수 없으면 값은 `null`입니다. 후자의 측정 출처와 보류 이유도 함께 반환합니다.
+`plate_counts`는 직접 검출·시간 연결·좌표 누락을 셉니다. 새 영상은 수동 정답이 없어 정확도·오탐률을 채점할 수 없습니다. `lift_to_knee_rise_px`는 이륙→무릎 통과, `knee_to_contact_rise_px`는 무릎 통과→접촉 상승량입니다. 시점이나 원판 좌표가 부족해 계산할 수 없으면 값은 `null`입니다. 기존 클라이언트가 업로드할 때 transition과 drive를 명시하면 두 프레임에서만 선택적 코사인 모델을 실행합니다. 이후 새 끝점을 지정하면 저장된 추적 중심으로 계산합니다. 예전 분석에 해당 끝점의 코사인 기록이 있으면 그 기록을 사용합니다.
 
-### 접촉부터 원판 최고점까지
+### 기본 세 모델 검증
 
-`drive`와 `catch`를 입력하면 Swagger 응답의 `drive_to_peak`와 로컬 `summary.json`의 `coaching.drive_to_peak`에서 같은 지표를 볼 수 있습니다. 접촉 프레임부터 캐치 바로 전까지 추적한 원판 중심이 가장 높은 첫 프레임이 `peak_frame`입니다. `rise_px`는 접촉 이후 더 올라간 높이이고, `mean_speed_px_s`는 이 높이를 원본 경과 시간 `elapsed_s`로 나눈 값입니다.
+같은 116프레임 측면 영상으로 CPU FastAPI에 시점을 비워 요청했습니다. 변경 전에는 원판 추적 좌표가 있는 113장에서 코사인 모델도 실행했습니다. 현재 기본 분석은 원판 베이스라인·CutMix·원본 자세 모델을 각각 116회 실행하고, 코사인 호출은 0회입니다. 두 실행 모두 첫 상승 최고점은 44번, 전반 평균속도는 707.12 px/s, 후반은 1,023.06 px/s, 뒤/앞 비율은 1.447배였습니다. 오버레이와 프레임 CSV는 바이트 단위로 일치했습니다. 앞서 RTX 3090 합성 MP4에서 검증한 구성은 코사인을 포함한 엔진 4개입니다.
+
+### 기존 선택 측정 · 접촉부터 원판 최고점까지
+
+기존 클라이언트에서 선택 항목 `drive`와 `catch`를 함께 보냈으면 응답의 `drive_to_peak`와 로컬 `summary.json`의 `coaching.drive_to_peak`에서 같은 지표를 볼 수 있습니다. 접촉 프레임부터 캐치 바로 전까지 추적한 원판 중심이 가장 높은 첫 프레임이 `peak_frame`입니다. `rise_px`는 접촉 이후 더 올라간 높이이고, `mean_speed_px_s`는 이 높이를 원본 경과 시간 `elapsed_s`로 나눈 값입니다.
 
 `speed_range_px_s`는 종료점을 최고점의 직전·해당·직후로 바꿔 계산한 세 평균속도의 최솟값과 최댓값입니다. 양옆을 모두 계산할 수 없으면 범위는 `null`이고 `range_reason`에 이유가 표시됩니다. 캐치 시점이 없으면 `status`는 ‘산출 보류’입니다. `missing_frames`로 구간 중 원판 관측이 빠진 장수를 확인할 수 있습니다. 캐치를 다시 판독해 저장하면 API는 그 시점으로 다시 계산합니다.
 
@@ -94,7 +98,7 @@ API 0.2에서 `pull_speed_ratio`는 **뒤/앞**으로 바뀌었습니다. 이전
 curl -sS http://127.0.0.1:8000/analyses \
   -F 'video=@data/raw/videos/c04_sn_f_01.mp4' \
   -F near_side=left -F facing=left \
-  -F lift_off=11 -F knee_pass=27 -F drive=43 -F catch=78 -F finish=107
+  -F ready=11 -F transition=27
 ```
 
 원본 업로드의 임시 사본은 요청 종료 시 정리됩니다. 결과는 `WL_OUTPUT_DIR/api/<분석 ID>/`에 저장되므로 서버를 다시 시작해도 같은 ID로 조회할 수 있습니다. API는 사용자가 올린 원본과 모델 경로가 포함된 로컬 `summary.json`을 다운로드 목록에서 제외합니다.

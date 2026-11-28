@@ -10,7 +10,7 @@ docker compose up --build -d api
 
 | Mac 폴더 | 컨테이너 위치 | 용도 |
 | --- | --- | --- |
-| `./models/pytorch` | `/models/pytorch` | 읽기 전용. `plate_baseline.pt`, `plate_cutmix.pt`, `yolo26n-pose.pt`를 둡니다. 무릎 통과→접촉 상승량에 쓰는 모델은 `plate_cosine.pt`입니다. |
+| `./models/pytorch` | `/models/pytorch` | 읽기 전용. `plate_baseline.pt`, `plate_cutmix.pt`, `yolo26n-pose.pt`를 둡니다. 이전 무릎 통과→접촉 상승량 비교를 재현할 때만 `plate_cosine.pt`를 추가합니다. |
 | `./outputs/docker_analysis` | `/results` | 분석별 결과를 보관해 컨테이너를 다시 만들어도 같은 ID로 조회합니다. |
 
 가중치 폴더, 결과 폴더, Mac 쪽 포트는 각각 `WL_CPU_WEIGHTS_DIR`, `WL_CPU_RESULTS_DIR`, `WL_CPU_PORT`로 바꿀 수 있습니다. 다음은 다른 로컬 폴더를 쓰는 예입니다.
